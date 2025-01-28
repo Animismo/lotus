@@ -23,8 +23,8 @@ import (
 
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/beacon"
-	"github.com/filecoin-project/lotus/chain/index"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/journal"
 	"github.com/filecoin-project/lotus/journal/alerting"
@@ -33,10 +33,8 @@ import (
 	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
 	_ "github.com/filecoin-project/lotus/lib/sigs/delegated"
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
-	"github.com/filecoin-project/lotus/markets/storageadapter"
 	"github.com/filecoin-project/lotus/node/config"
 	"github.com/filecoin-project/lotus/node/impl/common"
-	"github.com/filecoin-project/lotus/node/impl/net"
 	"github.com/filecoin-project/lotus/node/modules"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/helpers"
@@ -69,9 +67,7 @@ var (
 	AutoNATSvcKey        = special{10} // Libp2p option
 	BandwidthReporterKey = special{11} // Libp2p option
 	ConnGaterKey         = special{12} // Libp2p option
-	DAGStoreKey          = special{13} // constructor returns multiple values
 	ResourceManagerKey   = special{14} // Libp2p option
-	UserAgentKey         = special{15} // Libp2p option
 )
 
 type invoke int
@@ -91,7 +87,6 @@ const (
 	CheckFDLimit
 	CheckFvmConcurrency
 	CheckUDPBufferSize
-	LegacyMarketsEOL
 
 	// libp2p
 	PstoreAddSelfKeysKey
@@ -103,14 +98,19 @@ const (
 
 	RunHelloKey
 	RunChainExchangeKey
-	RunChainGraphsync
 	RunPeerMgrKey
 
 	HandleIncomingBlocksKey
 	HandleIncomingMessagesKey
-	HandleMigrateClientFundsKey
 	HandlePaymentChannelManagerKey
 
+	// Deprecated: RelayIndexerMessagesKey is no longer used, since IPNI has
+	// deprecated the use of GossipSub for propagating advertisements. Use IPNI Sync
+	// protocol instead.
+	//
+	// See:
+	//  - https://github.com/ipni/specs/blob/main/IPNI_HTTP_PROVIDER.md
+	//  - https://github.com/ipni/go-libipni/tree/main/dagsync/ipnisync
 	RelayIndexerMessagesKey
 
 	// miner
@@ -120,6 +120,7 @@ const (
 	HandleDealsKey
 	HandleRetrievalKey
 	RunSectorServiceKey
+	F3Participation
 
 	// daemon
 	ExtractApiKey
@@ -133,6 +134,8 @@ const (
 	SetApiEndpointKey
 
 	StoreEventsKey
+
+	InitChainIndexerKey
 
 	_nInvokes // keep this last
 )
@@ -167,7 +170,7 @@ func defaults() []Option {
 		Override(new(*alerting.Alerting), alerting.NewAlertingSystem),
 		Override(new(dtypes.NodeStartTime), FromVal(dtypes.NodeStartTime(time.Now()))),
 
-		Override(CheckFDLimit, modules.CheckFdLimit(build.DefaultFDLimit)),
+		Override(CheckFDLimit, modules.CheckFdLimit(buildconstants.DefaultFDLimit)),
 		Override(CheckFvmConcurrency, modules.CheckFvmConcurrency()),
 		Override(CheckUDPBufferSize, modules.CheckUDPBufferSize(2048*1024)),
 
@@ -265,13 +268,14 @@ func Base() Option {
 	)
 }
 
-// Config sets up constructors based on the provided Config
-func ConfigCommon(cfg *config.Common, enableLibp2pNode bool) Option {
+// ConfigCommon sets up constructors based on the provided Config
+func ConfigCommon(cfg *config.Common, buildVersion build.BuildVersion) Option {
 	// setup logging early
 	lotuslog.SetLevelsFromConfig(cfg.Logging.SubsystemLevels)
 
 	return Options(
 		func(s *Settings) error { s.Config = true; return nil },
+		Override(new(build.BuildVersion), buildVersion),
 		Override(new(dtypes.APIEndpoint), func() (dtypes.APIEndpoint, error) {
 			return multiaddr.NewMultiaddr(cfg.API.ListenAddress)
 		}),
@@ -286,33 +290,9 @@ func ConfigCommon(cfg *config.Common, enableLibp2pNode bool) Option {
 			return urls, nil
 		}),
 		ApplyIf(func(s *Settings) bool { return s.Base }), // apply only if Base has already been applied
-		If(!enableLibp2pNode,
-			Override(new(api.Net), new(api.NetStub)),
-			Override(new(api.Common), From(new(common.CommonAPI))),
-		),
-		If(enableLibp2pNode,
-			Override(new(api.Net), From(new(net.NetAPI))),
-			Override(new(api.Common), From(new(common.CommonAPI))),
-			Override(StartListeningKey, lp2p.StartListening(cfg.Libp2p.ListenAddresses)),
-			Override(ConnectionManagerKey, lp2p.ConnectionManager(
-				cfg.Libp2p.ConnMgrLow,
-				cfg.Libp2p.ConnMgrHigh,
-				time.Duration(cfg.Libp2p.ConnMgrGrace),
-				cfg.Libp2p.ProtectedPeers)),
-			Override(new(network.ResourceManager), lp2p.ResourceManager(cfg.Libp2p.ConnMgrHigh)),
-			Override(new(*pubsub.PubSub), lp2p.GossipSub),
-			Override(new(*config.Pubsub), &cfg.Pubsub),
+		Override(new(api.Net), new(api.NetStub)),
+		Override(new(api.Common), From(new(common.CommonAPI))),
 
-			ApplyIf(func(s *Settings) bool { return len(cfg.Libp2p.BootstrapPeers) > 0 },
-				Override(new(dtypes.BootstrapPeers), modules.ConfigBootstrap(cfg.Libp2p.BootstrapPeers)),
-			),
-
-			Override(AddrsFactoryKey, lp2p.AddrsFactory(
-				cfg.Libp2p.AnnounceAddresses,
-				cfg.Libp2p.NoAnnounceAddresses)),
-
-			If(!cfg.Libp2p.DisableNatPortMap, Override(NatPortMapKey, lp2p.NatPortMap)),
-		),
 		Override(new(dtypes.MetadataDS), modules.Datastore(cfg.Backup.DisableMetadataLog)),
 	)
 }
@@ -396,8 +376,6 @@ func Test() Option {
 		Unset(RunPeerMgrKey),
 		Unset(new(*peermgr.PeerMgr)),
 		Override(new(beacon.Schedule), testing.RandomBeacon),
-		Override(new(*storageadapter.DealPublisher), storageadapter.NewDealPublisher(nil, storageadapter.PublishMsgConfig{})),
-		Override(new(index.MsgIndex), modules.DummyMsgIndex),
 	)
 }
 

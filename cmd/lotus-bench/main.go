@@ -12,9 +12,9 @@ import (
 
 	"github.com/docker/go-units"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/minio/blake2b-simd"
 	"github.com/mitchellh/go-homedir"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-address"
@@ -24,7 +24,9 @@ import (
 
 	lapi "github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
+	proofsffi "github.com/filecoin-project/lotus/chain/proofs/ffi"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/genesis"
@@ -93,14 +95,14 @@ type Commit2In struct {
 }
 
 func main() {
-	logging.SetLogLevel("*", "INFO")
+	_ = logging.SetLogLevel("*", "INFO")
 
 	log.Info("Starting lotus-bench")
 
 	app := &cli.App{
 		Name:                      "lotus-bench",
 		Usage:                     "Benchmark performance of lotus on your hardware",
-		Version:                   build.UserVersion(),
+		Version:                   string(build.NodeUserVersion()),
 		DisableSliceFlagSeparator: true,
 		Commands: []*cli.Command{
 			proveCmd,
@@ -338,12 +340,12 @@ var sealBenchCmd = &cli.Command{
 
 		if !skipc2 {
 			log.Info("generating winning post candidates")
-			wipt, err := spt(sectorSize, false).RegisteredWinningPoStProof()
+			wipt, err := spt(sectorSize, miner.SealProofVariant_Standard).RegisteredWinningPoStProof()
 			if err != nil {
 				return err
 			}
 
-			fcandidates, err := ffiwrapper.ProofVerifier.GenerateWinningPoStSectorChallenge(context.TODO(), wipt, mid, challenge[:], uint64(len(extendedSealedSectors)))
+			fcandidates, err := proofsffi.ProofVerifier.GenerateWinningPoStSectorChallenge(context.TODO(), wipt, mid, challenge[:], uint64(len(extendedSealedSectors)))
 			if err != nil {
 				return err
 			}
@@ -386,7 +388,7 @@ var sealBenchCmd = &cli.Command{
 				ChallengedSectors: candidates,
 				Prover:            mid,
 			}
-			ok, err := ffiwrapper.ProofVerifier.VerifyWinningPoSt(context.TODO(), pvi1)
+			ok, err := proofsffi.ProofVerifier.VerifyWinningPoSt(context.TODO(), pvi1)
 			if err != nil {
 				return err
 			}
@@ -403,7 +405,7 @@ var sealBenchCmd = &cli.Command{
 				Prover:            mid,
 			}
 
-			ok, err = ffiwrapper.ProofVerifier.VerifyWinningPoSt(context.TODO(), pvi2)
+			ok, err = proofsffi.ProofVerifier.VerifyWinningPoSt(context.TODO(), pvi2)
 			if err != nil {
 				return err
 			}
@@ -444,7 +446,7 @@ var sealBenchCmd = &cli.Command{
 				ChallengedSectors: sealedSectors,
 				Prover:            mid,
 			}
-			ok, err = ffiwrapper.ProofVerifier.VerifyWindowPoSt(context.TODO(), wpvi1)
+			ok, err = proofsffi.ProofVerifier.VerifyWindowPoSt(context.TODO(), wpvi1)
 			if err != nil {
 				return err
 			}
@@ -460,7 +462,7 @@ var sealBenchCmd = &cli.Command{
 				ChallengedSectors: sealedSectors,
 				Prover:            mid,
 			}
-			ok, err = ffiwrapper.ProofVerifier.VerifyWindowPoSt(context.TODO(), wpvi2)
+			ok, err = proofsffi.ProofVerifier.VerifyWindowPoSt(context.TODO(), wpvi2)
 			if err != nil {
 				return err
 			}
@@ -556,7 +558,7 @@ func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par
 				Miner:  mid,
 				Number: i,
 			},
-			ProofType: spt(sectorSize, false),
+			ProofType: spt(sectorSize, miner.SealProofVariant_Standard),
 		}
 
 		start := time.Now()
@@ -586,7 +588,7 @@ func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par
 							Miner:  mid,
 							Number: i,
 						},
-						ProofType: spt(sectorSize, false),
+						ProofType: spt(sectorSize, miner.SealProofVariant_Standard),
 					}
 
 					start := time.Now()
@@ -678,7 +680,7 @@ func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par
 							UnsealedCID:           cids.Unsealed,
 						}
 
-						ok, err := ffiwrapper.ProofVerifier.VerifySeal(svi)
+						ok, err := proofsffi.ProofVerifier.VerifySeal(svi)
 						if err != nil {
 							return err
 						}
@@ -797,7 +799,7 @@ var proveCmd = &cli.Command{
 				Miner:  abi.ActorID(mid),
 				Number: abi.SectorNumber(c2in.SectorNum),
 			},
-			ProofType: spt(abi.SectorSize(c2in.SectorSize), false),
+			ProofType: spt(abi.SectorSize(c2in.SectorSize), miner.SealProofVariant_Standard),
 		}
 
 		fmt.Printf("----\nstart proof computation\n")
@@ -828,8 +830,8 @@ func bps(sectorSize abi.SectorSize, sectorNum int, d time.Duration) string {
 	return types.SizeStr(types.BigInt{Int: bps}) + "/s"
 }
 
-func spt(ssize abi.SectorSize, synth bool) abi.RegisteredSealProof {
-	spt, err := miner.SealProofTypeFromSectorSize(ssize, build.TestNetworkVersion, synth)
+func spt(ssize abi.SectorSize, variant miner.SealProofVariant) abi.RegisteredSealProof {
+	spt, err := miner.SealProofTypeFromSectorSize(ssize, buildconstants.TestNetworkVersion, variant)
 	if err != nil {
 		panic(err)
 	}

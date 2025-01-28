@@ -20,7 +20,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 
 	bstore "github.com/filecoin-project/lotus/blockstore"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/chain/actors/policy"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/metrics"
@@ -59,7 +59,7 @@ var (
 	enableDebugLogWriteTraces = false
 
 	// upgradeBoundary is the boundary before and after an upgrade where we suppress compaction
-	upgradeBoundary = build.Finality
+	upgradeBoundary = policy.ChainFinality
 )
 
 type CompactType int
@@ -266,7 +266,11 @@ func Open(path string, ds dstore.Datastore, hot, cold bstore.Blockstore, cfg *Co
 	ss.txnViewsCond.L = &ss.txnViewsMx
 	ss.txnSyncCond.L = &ss.txnSyncMx
 	ss.chainSyncCond.L = &ss.chainSyncMx
-	ss.ctx, ss.cancel = context.WithCancel(context.Background())
+
+	baseCtx := context.Background()
+	ctx := metrics.AddNetworkTag(baseCtx)
+
+	ss.ctx, ss.cancel = context.WithCancel(ctx)
 
 	ss.reifyCond.L = &ss.reifyMx
 	ss.reifyPend = make(map[cid.Cid]struct{})
@@ -282,14 +286,14 @@ func Open(path string, ds dstore.Datastore, hot, cold bstore.Blockstore, cfg *Co
 	if ss.checkpointExists() {
 		log.Info("found compaction checkpoint; resuming compaction")
 		if err := ss.completeCompaction(); err != nil {
-			markSetEnv.Close() //nolint:errcheck
+			_ = markSetEnv.Close()
 			return nil, xerrors.Errorf("error resuming compaction: %w", err)
 		}
 	}
 	if ss.pruneCheckpointExists() {
 		log.Info("found prune checkpoint; resuming prune")
 		if err := ss.completePrune(); err != nil {
-			markSetEnv.Close() //nolint:errcheck
+			_ = markSetEnv.Close()
 			return nil, xerrors.Errorf("error resuming prune: %w", err)
 		}
 	}
@@ -297,7 +301,8 @@ func Open(path string, ds dstore.Datastore, hot, cold bstore.Blockstore, cfg *Co
 	return ss, nil
 }
 
-// Blockstore interface
+// Blockstore interface --------------------------------------------------------
+
 func (s *SplitStore) DeleteBlock(_ context.Context, _ cid.Cid) error {
 	// afaict we don't seem to be using this method, so it's not implemented
 	return errors.New("DeleteBlock not implemented on SplitStore; don't do this Luke!") //nolint
@@ -686,7 +691,7 @@ func (s *SplitStore) isWarm() bool {
 	return s.warmupEpoch.Load() > 0
 }
 
-// State tracking
+// Start state tracking
 func (s *SplitStore) Start(chain ChainAccessor, us stmgr.UpgradeSchedule) error {
 	s.chain = chain
 	curTs := chain.GetHeaviestTipSet()

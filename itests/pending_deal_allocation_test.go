@@ -1,4 +1,3 @@
-// stm: #integration
 package itests
 
 import (
@@ -20,7 +19,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 
 	lapi "github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/market"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/verifreg"
@@ -56,7 +55,6 @@ func TestGetAllocationForPendingDeal(t *testing.T) {
 	defer cancel()
 
 	// get VRH
-	//stm: @CHAIN_STATE_VERIFIED_REGISTRY_ROOT_KEY_001
 	vrh, err := api.StateVerifiedRegistryRootKey(ctx, types.TipSetKey{})
 	fmt.Println(vrh.String())
 	require.NoError(t, err)
@@ -87,7 +85,6 @@ func TestGetAllocationForPendingDeal(t *testing.T) {
 	sm, err := api.MpoolPushMessage(ctx, msg, nil)
 	require.NoError(t, err, "AddVerifier failed")
 
-	//stm: @CHAIN_STATE_WAIT_MSG_001
 	res, err := api.StateWaitMsg(ctx, sm.Cid(), 1, lapi.LookbackNoLimit, true)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, res.Receipt.ExitCode)
@@ -109,13 +106,11 @@ func TestGetAllocationForPendingDeal(t *testing.T) {
 	sm, err = api.MpoolPushMessage(ctx, msg, nil)
 	require.NoError(t, err)
 
-	//stm: @CHAIN_STATE_WAIT_MSG_001
 	res, err = api.StateWaitMsg(ctx, sm.Cid(), 1, lapi.LookbackNoLimit, true)
 	require.NoError(t, err)
 	require.EqualValues(t, 0, res.Receipt.ExitCode)
 
 	// check datacap balance
-	//stm: @CHAIN_STATE_VERIFIED_CLIENT_STATUS_001
 	dcap, err := api.StateVerifiedClientStatus(ctx, verifiedClientAddr, types.EmptyTSK)
 	require.NoError(t, err)
 	require.Equal(t, *dcap, datacap)
@@ -172,7 +167,7 @@ func TestGetAllocationForPendingDeal(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, exitcode.Ok, r.Receipt.ExitCode)
 
-	ret, err := market.DecodePublishStorageDealsReturn(r.Receipt.Return, build.TestNetworkVersion)
+	ret, err := market.DecodePublishStorageDealsReturn(r.Receipt.Return, buildconstants.TestNetworkVersion)
 	require.NoError(t, err)
 	valid, _, err := ret.IsDealValid(0)
 	require.NoError(t, err)

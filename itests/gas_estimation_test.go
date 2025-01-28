@@ -14,7 +14,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/account"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -75,7 +75,7 @@ func TestEstimateInclusion(t *testing.T) {
 	// (which, unfortunately, looks at the height and not the current network version).
 	oldPrices := vm.Prices
 	vm.Prices = map[abi.ChainEpoch]vm.Pricelist{
-		0: oldPrices[build.UpgradeHyggeHeight],
+		0: oldPrices[buildconstants.UpgradeHyggeHeight],
 	}
 	t.Cleanup(func() { vm.Prices = oldPrices })
 
@@ -125,7 +125,7 @@ func TestEstimateInclusion(t *testing.T) {
 
 	// Mutate the last byte to get a new address of the same length.
 	toBytes := msg.To.Bytes()
-	toBytes[len(toBytes)-1] += 1 //nolint:golint
+	toBytes[len(toBytes)-1] += 1 // revive:disable-line:increment-decrement
 	newAddr, err := address.NewFromBytes(toBytes)
 	require.NoError(t, err)
 
@@ -158,7 +158,7 @@ func TestEstimateInclusion(t *testing.T) {
 
 	msg.Nonce = 2
 	msg.To = msg.From
-	msg.GasLimit -= 1 //nolint:golint
+	msg.GasLimit -= 1 // revive:disable-line:increment-decrement
 
 	smsg, err = client.WalletSignMessage(ctx, client.DefaultKey.Address, msg)
 	require.NoError(t, err)

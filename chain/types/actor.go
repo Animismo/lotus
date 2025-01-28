@@ -10,7 +10,7 @@ import (
 
 var ErrActorNotFound = errors.New("actor not found")
 
-// Actor State for state tree version up to 4
+// ActorV4 is Actor State for state tree version up to 4
 type ActorV4 struct {
 	// Identifies the type of actor (string coded as a CID), see `chain/actors/actors.go`.
 	Code    cid.Cid
@@ -19,15 +19,15 @@ type ActorV4 struct {
 	Balance BigInt
 }
 
-// Actor State for state tree version 5
+// ActorV5 is Actor State for state tree version 5
 type ActorV5 struct {
 	// Identifies the type of actor (string coded as a CID), see `chain/actors/actors.go`.
 	Code    cid.Cid
 	Head    cid.Cid
 	Nonce   uint64
 	Balance BigInt
-	// Deterministic Address.
-	Address *address.Address
+	// The f4 address of the actor, if any.
+	DelegatedAddress *address.Address
 }
 
 type Actor = ActorV5

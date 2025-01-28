@@ -17,7 +17,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
-// DealInfo is a tuple of deal identity and its schedule
+// PieceDealInfo is a tuple of deal identity and its schedule
 type PieceDealInfo struct {
 	// "Old" builtin-market deal info
 	PublishCid   *cid.Cid
@@ -147,7 +147,7 @@ func (ds *PieceDealInfo) EndEpoch() (abi.ChainEpoch, error) {
 	default:
 		// note - when implementing make sure to cache any dynamically computed values
 		// todo do we want a smarter mechanism here
-		return ds.DealSchedule.StartEpoch, nil
+		return ds.DealSchedule.EndEpoch, nil
 	}
 }
 
@@ -167,6 +167,15 @@ func (ds *PieceDealInfo) String() string {
 	default:
 		// todo check that VAlloc doesn't print as a pointer
 		return fmt.Sprintf("DirectDataOnboarding{PieceCID: %s, VAllloc: %x}", ds.PieceActivationManifest.CID, ds.PieceActivationManifest.VerifiedAllocationKey)
+	}
+}
+
+func (ds *PieceDealInfo) Size() abi.PaddedPieceSize {
+	switch {
+	case ds.isBuiltinMarketDeal():
+		return ds.DealProposal.PieceSize
+	default:
+		return ds.PieceActivationManifest.Size
 	}
 }
 

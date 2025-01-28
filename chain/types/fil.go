@@ -6,7 +6,9 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/invopop/jsonschema"
+
+	"github.com/filecoin-project/lotus/build/buildconstants"
 )
 
 type FIL BigInt
@@ -19,7 +21,7 @@ func (f FIL) String() string {
 }
 
 func (f FIL) Unitless() string {
-	r := new(big.Rat).SetFrac(f.Int, big.NewInt(int64(build.FilecoinPrecision)))
+	r := new(big.Rat).SetFrac(f.Int, big.NewInt(int64(buildconstants.FilecoinPrecision)))
 	if r.Sign() == 0 {
 		return "0"
 	}
@@ -66,7 +68,7 @@ func (f FIL) Nano() string {
 func (f FIL) Format(s fmt.State, ch rune) {
 	switch ch {
 	case 's', 'v':
-		fmt.Fprint(s, f.String())
+		_, _ = fmt.Fprint(s, f.String())
 	default:
 		f.Int.Format(s, ch)
 	}
@@ -115,7 +117,7 @@ func ParseFIL(s string) (FIL, error) {
 	}
 
 	if !attofil {
-		r = r.Mul(r, big.NewRat(int64(build.FilecoinPrecision), 1))
+		r = r.Mul(r, big.NewRat(int64(buildconstants.FilecoinPrecision), 1))
 	}
 
 	if !r.IsInt() {
@@ -136,6 +138,13 @@ func MustParseFIL(s string) FIL {
 	}
 
 	return n
+}
+
+func (f FIL) JSONSchema() *jsonschema.Schema {
+	return &jsonschema.Schema{
+		Type:    "string",
+		Pattern: `^((\d+(\.\d+)?|0x[0-9a-fA-F]+))( ([aA]([tT][tT][oO])?)?[fF][iI][lL])?$`,
+	}
 }
 
 var _ encoding.TextMarshaler = (*FIL)(nil)

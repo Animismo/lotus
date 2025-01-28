@@ -20,6 +20,7 @@ import (
 
 	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/verifreg"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -30,7 +31,7 @@ import (
 var log = logging.Logger("main")
 
 func main() {
-	logging.SetLogLevel("*", "INFO")
+	_ = logging.SetLogLevel("*", "INFO")
 
 	log.Info("Starting fountain")
 
@@ -41,7 +42,7 @@ func main() {
 	app := &cli.App{
 		Name:    "lotus-fountain",
 		Usage:   "Devnet token distribution utility",
-		Version: build.UserVersion(),
+		Version: string(build.NodeUserVersion()),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "repo",
@@ -122,7 +123,7 @@ var runCmd = &cli.Command{
 			sendPerRequest: sendPerRequest,
 			limiter: NewLimiter(LimiterConfig{
 				TotalRate:   500 * time.Millisecond,
-				TotalBurst:  build.BlockMessageLimit,
+				TotalBurst:  buildconstants.BlockMessageLimit,
 				IPRate:      10 * time.Minute,
 				IPBurst:     5,
 				WalletRate:  15 * time.Minute,

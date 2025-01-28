@@ -1,6 +1,7 @@
 SHELL=/usr/bin/env bash
 
-all: build
+all: build  ## Build all main binaries (default target)
+
 .PHONY: all
 
 unexport GOFLAGS
@@ -28,6 +29,7 @@ endif
 
 GOFLAGS+=-ldflags="$(ldflags)"
 
+FIX_IMPORTS = $(GOCC) run ./scripts/fiximports
 
 ## FFI
 
@@ -45,13 +47,13 @@ MODULES+=$(FFI_PATH)
 BUILD_DEPS+=build/.filecoin-install
 CLEAN+=build/.filecoin-install
 
-ffi-version-check:
+ffi-version-check:  ## Check FFI version compatibility
 	@[[ "$$(awk '/const Version/{print $$5}' extern/filecoin-ffi/version.go)" -eq 3 ]] || (echo "FFI version mismatch, update submodules"; exit 1)
 BUILD_DEPS+=ffi-version-check
 
 .PHONY: ffi-version-check
 
-$(MODULES): build/.update-modules ;
+$(MODULES): build/.update-modules ;  ## Update git submodules
 # dummy file that marks the last time modules were updated
 build/.update-modules:
 	git submodule update --init --recursive
@@ -63,176 +65,161 @@ build/.update-modules:
 
 CLEAN+=build/.update-modules
 
-deps: $(BUILD_DEPS)
+deps: $(BUILD_DEPS)  ## Install build dependencies
 .PHONY: deps
 
-build-devnets: build lotus-seed lotus-shed curio
+build-devnets: build lotus-seed lotus-shed  ## Build binaries for development networks
 .PHONY: build-devnets
 
 debug: GOFLAGS+=-tags=debug
-debug: build-devnets
+debug: build-devnets  ## Build with debug tags
 
 2k: GOFLAGS+=-tags=2k
-2k: build-devnets
+2k: build-devnets  ## Build for 2k network
 
 calibnet: GOFLAGS+=-tags=calibnet
-calibnet: build-devnets
+calibnet: build-devnets  ## Build for calibnet network
 
 butterflynet: GOFLAGS+=-tags=butterflynet
-butterflynet: build-devnets
+butterflynet: build-devnets  ## Build for butterflynet network
 
 interopnet: GOFLAGS+=-tags=interopnet
-interopnet: build-devnets
+interopnet: build-devnets  ## Build for interopnet network
 
-lotus: $(BUILD_DEPS)
+lotus: $(BUILD_DEPS)  ## Build the main Lotus binary
 	rm -f lotus
 	$(GOCC) build $(GOFLAGS) -o lotus ./cmd/lotus
 
 .PHONY: lotus
 BINS+=lotus
 
-lotus-miner: $(BUILD_DEPS)
+lotus-miner: $(BUILD_DEPS)  ## Build the Lotus miner binary
 	rm -f lotus-miner
 	$(GOCC) build $(GOFLAGS) -o lotus-miner ./cmd/lotus-miner
 .PHONY: lotus-miner
 BINS+=lotus-miner
 
-curio: $(BUILD_DEPS)
-	rm -f curio
-	$(GOCC) build $(GOFLAGS) -o curio ./cmd/curio
-.PHONY: curio
-BINS+=curio
-
-cu2k: GOFLAGS+=-tags=2k
-cu2k: curio
-
-lotus-worker: $(BUILD_DEPS)
+lotus-worker: $(BUILD_DEPS)  ## Build the Lotus worker binary
 	rm -f lotus-worker
 	$(GOCC) build $(GOFLAGS) -o lotus-worker ./cmd/lotus-worker
 .PHONY: lotus-worker
 BINS+=lotus-worker
 
-lotus-shed: $(BUILD_DEPS)
+lotus-shed: $(BUILD_DEPS)  ## Build the Lotus shed tool
 	rm -f lotus-shed
 	$(GOCC) build $(GOFLAGS) -o lotus-shed ./cmd/lotus-shed
 .PHONY: lotus-shed
 BINS+=lotus-shed
 
-lotus-gateway: $(BUILD_DEPS)
+lotus-gateway: $(BUILD_DEPS)  ## Build the Lotus gateway
 	rm -f lotus-gateway
 	$(GOCC) build $(GOFLAGS) -o lotus-gateway ./cmd/lotus-gateway
 .PHONY: lotus-gateway
 BINS+=lotus-gateway
 
-build: lotus lotus-miner lotus-worker curio
+build: lotus lotus-miner lotus-worker  ## Build all main binaries
 	@[[ $$(type -P "lotus") ]] && echo "Caution: you have \
 an existing lotus binary in your PATH. This may cause problems if you don't run 'sudo make install'" || true
 
 .PHONY: build
 
-install: install-daemon install-miner install-worker install-curio
+install: install-daemon install-miner install-worker  ## Install all binaries
 
-install-daemon:
+install-daemon:  ## Install the Lotus daemon
 	install -C ./lotus /usr/local/bin/lotus
 
-install-miner:
+install-miner:  ## Install the Lotus miner
 	install -C ./lotus-miner /usr/local/bin/lotus-miner
 
-install-curio:
-	install -C ./curio /usr/local/bin/curio
-
-install-worker:
+install-worker:  ## Install the Lotus worker
 	install -C ./lotus-worker /usr/local/bin/lotus-worker
 
-install-app:
+install-app:  ## Install a specified app
 	install -C ./$(APP) /usr/local/bin/$(APP)
 
-uninstall: uninstall-daemon uninstall-miner uninstall-worker
+uninstall: uninstall-daemon uninstall-miner uninstall-worker  ## Uninstall all binaries
 .PHONY: uninstall
 
-uninstall-daemon:
+uninstall-daemon:  ## Uninstall the Lotus daemon
 	rm -f /usr/local/bin/lotus
 
-uninstall-miner:
+uninstall-miner:  ## Uninstall the Lotus miner
 	rm -f /usr/local/bin/lotus-miner
 
-uninstall-curio:
-	rm -f /usr/local/bin/curio
-
-uninstall-worker:
+uninstall-worker:  ## Uninstall the Lotus worker
 	rm -f /usr/local/bin/lotus-worker
 
 # TOOLS
 
-lotus-seed: $(BUILD_DEPS)
+lotus-seed: $(BUILD_DEPS) ## Build the Lotus seed tool
 	rm -f lotus-seed
 	$(GOCC) build $(GOFLAGS) -o lotus-seed ./cmd/lotus-seed
 
 .PHONY: lotus-seed
 BINS+=lotus-seed
 
-benchmarks:
+benchmarks:  ## Run benchmarks and submit results
 	$(GOCC) run github.com/whyrusleeping/bencher ./... > bench.json
 	@echo Submitting results
 	@curl -X POST 'http://benchmark.kittyhawk.wtf/benchmark' -d '@bench.json' -u "${benchmark_http_cred}"
 .PHONY: benchmarks
 
-lotus-fountain:
+lotus-fountain:  ## Build the Lotus fountain tool
 	rm -f lotus-fountain
 	$(GOCC) build $(GOFLAGS) -o lotus-fountain ./cmd/lotus-fountain
 	$(GOCC) run github.com/GeertJohan/go.rice/rice append --exec lotus-fountain -i ./cmd/lotus-fountain -i ./build
 .PHONY: lotus-fountain
 BINS+=lotus-fountain
 
-lotus-bench:
+lotus-bench:  ## Build the Lotus bench tool
 	rm -f lotus-bench
 	$(GOCC) build $(GOFLAGS) -o lotus-bench ./cmd/lotus-bench
 .PHONY: lotus-bench
 BINS+=lotus-bench
 
-lotus-stats:
+lotus-stats:  ## Build the Lotus stats tool
 	rm -f lotus-stats
 	$(GOCC) build $(GOFLAGS) -o lotus-stats ./cmd/lotus-stats
 .PHONY: lotus-stats
 BINS+=lotus-stats
 
-lotus-pcr:
+lotus-pcr:  ## Build the Lotus PCR tool
 	rm -f lotus-pcr
 	$(GOCC) build $(GOFLAGS) -o lotus-pcr ./cmd/lotus-pcr
 .PHONY: lotus-pcr
 BINS+=lotus-pcr
 
-lotus-health:
+lotus-health:  ## Build the Lotus health tool
 	rm -f lotus-health
 	$(GOCC) build -o lotus-health ./cmd/lotus-health
 .PHONY: lotus-health
 BINS+=lotus-health
 
-lotus-wallet: $(BUILD_DEPS)
+lotus-wallet: $(BUILD_DEPS)  ## Build the Lotus wallet tool
 	rm -f lotus-wallet
 	$(GOCC) build $(GOFLAGS) -o lotus-wallet ./cmd/lotus-wallet
 .PHONY: lotus-wallet
 BINS+=lotus-wallet
 
-lotus-keygen:
+lotus-keygen:  ## Build the Lotus keygen tool
 	rm -f lotus-keygen
 	$(GOCC) build -o lotus-keygen ./cmd/lotus-keygen
 .PHONY: lotus-keygen
 BINS+=lotus-keygen
 
-testground:
+testground:  ## Build for testground
 	$(GOCC) build -tags testground -o /dev/null ./cmd/lotus
 .PHONY: testground
 BINS+=testground
 
 
-tvx:
+tvx:  ## Build the TVX tool
 	rm -f tvx
 	$(GOCC) build -o tvx ./cmd/tvx
 .PHONY: tvx
 BINS+=tvx
 
-lotus-sim: $(BUILD_DEPS)
+lotus-sim: $(BUILD_DEPS)  ## Build the Lotus simulator
 	rm -f lotus-sim
 	$(GOCC) build $(GOFLAGS) -o lotus-sim ./cmd/lotus-sim
 .PHONY: lotus-sim
@@ -240,7 +227,7 @@ BINS+=lotus-sim
 
 # SYSTEMD
 
-install-daemon-service: install-daemon
+install-daemon-service: install-daemon  ## Install systemd service for Lotus daemon
 	mkdir -p /etc/systemd/system
 	mkdir -p /var/log/lotus
 	install -C -m 0644 ./scripts/lotus-daemon.service /etc/systemd/system/lotus-daemon.service
@@ -250,7 +237,7 @@ install-daemon-service: install-daemon
 	@echo "To start the service, run: 'sudo systemctl start lotus-daemon'"
 	@echo "To enable the service on startup, run: 'sudo systemctl enable lotus-daemon'"
 
-install-miner-service: install-miner install-daemon-service
+install-miner-service: install-miner install-daemon-service  ## Install systemd service for Lotus miner
 	mkdir -p /etc/systemd/system
 	mkdir -p /var/log/lotus
 	install -C -m 0644 ./scripts/lotus-miner.service /etc/systemd/system/lotus-miner.service
@@ -260,97 +247,80 @@ install-miner-service: install-miner install-daemon-service
 	@echo "To start the service, run: 'sudo systemctl start lotus-miner'"
 	@echo "To enable the service on startup, run: 'sudo systemctl enable lotus-miner'"
 
-install-curio-service: install-curio install-daemon-service
-	mkdir -p /etc/systemd/system
-	mkdir -p /var/log/lotus
-	install -C -m 0644 ./scripts/curio.service /etc/systemd/system/curio.service
-	systemctl daemon-reload
-	@echo
-	@echo "Curio service installed. Don't forget to run 'sudo systemctl start curio' to start it and 'sudo systemctl enable curio' for it to be enabled on startup."
+install-main-services: install-miner-service  ## Install main systemd services
 
-install-main-services: install-miner-service
+install-all-services: install-main-services  ## Install all systemd services
 
-install-all-services: install-main-services
+install-services: install-main-services  ## Alias for installing main services
 
-install-services: install-main-services
-
-clean-daemon-service: clean-miner-service
+clean-daemon-service: clean-miner-service  ## Clean systemd service for Lotus daemon
 	-systemctl stop lotus-daemon
 	-systemctl disable lotus-daemon
 	rm -f /etc/systemd/system/lotus-daemon.service
 	systemctl daemon-reload
 
-clean-miner-service:
+clean-miner-service:  ## Clean systemd service for Lotus miner
 	-systemctl stop lotus-miner
 	-systemctl disable lotus-miner
 	rm -f /etc/systemd/system/lotus-miner.service
 	systemctl daemon-reload
 
-clean-curio-service:
-	-systemctl stop curio
-	-systemctl disable curio
-	rm -f /etc/systemd/system/curio.service
-	systemctl daemon-reload
+clean-main-services: clean-daemon-service  ## Clean main systemd services
 
-clean-main-services: clean-daemon-service
+clean-all-services: clean-main-services  ## Clean all systemd services
 
-clean-all-services: clean-main-services
-
-clean-services: clean-all-services
+clean-services: clean-all-services  ## Alias for cleaning all services
 
 # MISC
+buildall: $(BINS)  ## Build all binaries
 
-buildall: $(BINS)
-
-install-completions:
+install-completions:  ## Install shell completions
 	mkdir -p /usr/share/bash-completion/completions /usr/local/share/zsh/site-functions/
 	install -C ./scripts/bash-completion/lotus /usr/share/bash-completion/completions/lotus
 	install -C ./scripts/zsh-completion/lotus /usr/local/share/zsh/site-functions/_lotus
 
-unittests:
+unittests:  ## Run unit tests
 	@$(GOCC) test $(shell go list ./... | grep -v /lotus/itests)
 .PHONY: unittests
 
-clean:
+clean:  ## Clean build artifacts
 	rm -rf $(CLEAN) $(BINS)
 	-$(MAKE) -C $(FFI_PATH) clean
 .PHONY: clean
 
-dist-clean:
+dist-clean:  ## Thoroughly clean, including git submodules
 	git clean -xdff
 	git submodule deinit --all -f
 .PHONY: dist-clean
 
-type-gen: api-gen
+type-gen: api-gen  ## Generate type information
 	$(GOCC) run ./gen/main.go
 	$(GOCC) generate -x ./...
-	goimports -w api/
+	$(FIX_IMPORTS)
 
-actors-code-gen:
+actors-code-gen:  ## Generate actor code
 	$(GOCC) run ./gen/inline-gen . gen/inlinegen-data.json
 	$(GOCC) run ./chain/actors/agen
 	$(GOCC) fmt ./...
 
-actors-gen: actors-code-gen 
+actors-gen: actors-code-gen  ## Generate actors
 	$(GOCC) run ./scripts/fiximports
 .PHONY: actors-gen
 
-bundle-gen:
+bundle-gen:  ## Generate bundle
 	$(GOCC) run ./gen/bundle $(VERSION) $(RELEASE) $(RELEASE_OVERRIDES)
 	$(GOCC) fmt ./build/...
 .PHONY: bundle-gen
 
-
-api-gen:
+api-gen:  ## Generate API
 	$(GOCC) run ./gen/api
-	goimports -w api
-	goimports -w api
+	$(FIX_IMPORTS)
 .PHONY: api-gen
 
-cfgdoc-gen:
+cfgdoc-gen:  ## Generate configuration documentation
 	$(GOCC) run ./node/config/cfgdocgen > ./node/config/doc_gen.go
 
-appimage: lotus
+appimage: lotus  ## Build AppImage
 	rm -rf appimage-builder-cache || true
 	rm AppDir/io.filecoin.lotus.desktop || true
 	rm AppDir/icon.svg || true
@@ -359,62 +329,32 @@ appimage: lotus
 	cp ./lotus AppDir/usr/bin/
 	appimage-builder
 
-docsgen: docsgen-md docsgen-openrpc fiximports
+docsgen: fiximports  ## Generate documentation
+	$(GOCC) run ./gen/docs
+.PHONY: docsgen
 
-docsgen-md-bin: api-gen actors-gen
-	$(GOCC) build $(GOFLAGS) -o docgen-md ./api/docgen/cmd
-docsgen-openrpc-bin: api-gen actors-gen
-	$(GOCC) build $(GOFLAGS) -o docgen-openrpc ./api/docgen-openrpc/cmd
+fiximports:  ## Fix imports
+	$(FIX_IMPORTS)
+.PHONY: fiximports
 
-docsgen-md: docsgen-md-full docsgen-md-storage docsgen-md-worker docsgen-md-curio
-
-docsgen-md-full: docsgen-md-bin
-	./docgen-md "api/api_full.go" "FullNode" "api" "./api" > documentation/en/api-v1-unstable-methods.md
-	./docgen-md "api/v0api/full.go" "FullNode" "v0api" "./api/v0api" > documentation/en/api-v0-methods.md
-docsgen-md-storage: docsgen-md-bin
-	./docgen-md "api/api_storage.go" "StorageMiner" "api" "./api" > documentation/en/api-v0-methods-miner.md
-docsgen-md-worker: docsgen-md-bin
-	./docgen-md "api/api_worker.go" "Worker" "api" "./api" > documentation/en/api-v0-methods-worker.md
-docsgen-md-curio: docsgen-md-bin
-	./docgen-md "api/api_curio.go" "Curio" "api" "./api" > documentation/en/api-v0-methods-curio.md
-
-docsgen-openrpc: docsgen-openrpc-full docsgen-openrpc-storage docsgen-openrpc-worker docsgen-openrpc-gateway
-
-docsgen-openrpc-full: docsgen-openrpc-bin
-	./docgen-openrpc "api/api_full.go" "FullNode" "api" "./api" > build/openrpc/full.json
-docsgen-openrpc-storage: docsgen-openrpc-bin
-	./docgen-openrpc "api/api_storage.go" "StorageMiner" "api" "./api" > build/openrpc/miner.json
-docsgen-openrpc-worker: docsgen-openrpc-bin
-	./docgen-openrpc "api/api_worker.go" "Worker" "api" "./api" > build/openrpc/worker.json
-docsgen-openrpc-gateway: docsgen-openrpc-bin
-	./docgen-openrpc "api/api_gateway.go" "Gateway" "api" "./api" > build/openrpc/gateway.json
-
-.PHONY: docsgen docsgen-md-bin docsgen-openrpc-bin
-
-fiximports:
-	$(GOCC) run ./scripts/fiximports
-
-gen: actors-code-gen type-gen cfgdoc-gen docsgen api-gen circleci
+gen: actors-code-gen type-gen cfgdoc-gen docsgen api-gen  ## Run all generation tasks
 	$(GOCC) run ./scripts/fiximports
 	@echo ">>> IF YOU'VE MODIFIED THE CLI OR CONFIG, REMEMBER TO ALSO RUN 'make docsgen-cli'"
 .PHONY: gen
 
-jen: gen
+jen: gen  ## Alias for gen
 
-snap: lotus lotus-miner lotus-worker curio
+snap: lotus lotus-miner lotus-worker  ## Build snap package
 	snapcraft
 	# snapcraft upload ./lotus_*.snap
 
-# separate from gen because it needs binaries
-docsgen-cli: lotus lotus-miner lotus-worker curio
-	python3 ./scripts/generate-lotus-cli.py
-	./lotus config default > documentation/en/default-lotus-config.toml
-	./lotus-miner config default > documentation/en/default-lotus-miner-config.toml
-	./curio config default > documentation/en/default-curio-config.toml
+docsgen-cli:  ## Generate CLI documentation
+	$(GOCC) run ./scripts/docsgen-cli
 .PHONY: docsgen-cli
 
-print-%:
+print-%:  ## Print variable value
 	@echo $*=$($*)
 
-circleci:
-	go generate -x ./.circleci
+help:  ## Display this help message
+	@echo "Available targets:"
+	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort

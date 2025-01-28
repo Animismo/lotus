@@ -96,6 +96,14 @@ func (s *state5) MinerCounts() (uint64, uint64, error) {
 	return uint64(s.State.MinerAboveMinPowerCount), uint64(s.State.MinerCount), nil
 }
 
+func (s *state5) RampStartEpoch() int64 {
+	return 0
+}
+
+func (s *state5) RampDurationEpochs() uint64 {
+	return 0
+}
+
 func (s *state5) ListAllMiners() ([]address.Address, error) {
 	claims, err := s.claims()
 	if err != nil {
@@ -118,7 +126,7 @@ func (s *state5) ListAllMiners() ([]address.Address, error) {
 	return miners, nil
 }
 
-func (s *state5) ForEachClaim(cb func(miner address.Address, claim Claim) error) error {
+func (s *state5) ForEachClaim(cb func(miner address.Address, claim Claim) error, onlyEligible bool) error {
 	claims, err := s.claims()
 	if err != nil {
 		return err
@@ -130,10 +138,26 @@ func (s *state5) ForEachClaim(cb func(miner address.Address, claim Claim) error)
 		if err != nil {
 			return err
 		}
-		return cb(a, Claim{
-			RawBytePower:    claim.RawBytePower,
-			QualityAdjPower: claim.QualityAdjPower,
-		})
+		if !onlyEligible {
+			return cb(a, Claim{
+				RawBytePower:    claim.RawBytePower,
+				QualityAdjPower: claim.QualityAdjPower,
+			})
+		}
+
+		//slow path
+		eligible, err := s.State.MinerNominalPowerMeetsConsensusMinimum(s.store, a)
+
+		if err != nil {
+			return fmt.Errorf("checking consensus minimums: %w", err)
+		}
+		if eligible {
+			return cb(a, Claim{
+				RawBytePower:    claim.RawBytePower,
+				QualityAdjPower: claim.QualityAdjPower,
+			})
+		}
+		return nil
 	})
 }
 

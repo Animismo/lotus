@@ -1,4 +1,3 @@
-// stm: #unit
 package store_test
 
 import (
@@ -7,19 +6,18 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/filecoin-project/lotus/chain/actors/policy"
 	"github.com/filecoin-project/lotus/chain/gen"
 )
 
 func TestChainCheckpoint(t *testing.T) {
-	//stm: @CHAIN_GEN_NEXT_TIPSET_FROM_MINERS_001
-	//stm: @CHAIN_STORE_GET_TIPSET_FROM_KEY_001, @CHAIN_STORE_SET_HEAD_001, @CHAIN_STORE_GET_HEAVIEST_TIPSET_001
-	//stm: @CHAIN_STORE_SET_CHECKPOINT_001, @CHAIN_STORE_MAYBE_TAKE_HEAVIER_TIPSET_001, @CHAIN_STORE_REMOVE_CHECKPOINT_001
 	ctx := context.Background()
 
 	cg, err := gen.NewGenerator()
 	if err != nil {
 		t.Fatal(err)
 	}
+	cg.AdvanceState = false
 
 	// Let the first miner mine some blocks.
 	last := cg.CurTipset.TipSet()
@@ -52,7 +50,7 @@ func TestChainCheckpoint(t *testing.T) {
 	head = cs.GetHeaviestTipSet()
 	require.True(t, head.Equals(checkpoint))
 
-	// Let the second miner miner mine a fork
+	// Let the second miner mine a fork
 	last = checkpointParents
 	for i := 0; i < 4; i++ {
 		ts, err := cg.NextTipSetFromMiners(last, cg.Miners[1:], 0)
@@ -83,4 +81,41 @@ func TestChainCheckpoint(t *testing.T) {
 
 	head = cs.GetHeaviestTipSet()
 	require.True(t, head.Equals(checkpoint))
+
+	// Now extend the fork 900 epochs into the future.
+	for i := 0; i < int(policy.ChainFinality)+10; i++ {
+		ts, err := cg.NextTipSetFromMiners(last, cg.Miners[1:], 0)
+		require.NoError(t, err)
+
+		last = ts.TipSet.TipSet()
+	}
+
+	// Try to re-checkpoint to the long fork. This will work because we only have to revert a
+	// single epoch.
+	err = cs.SetCheckpoint(ctx, last)
+	require.NoError(t, err)
+
+	head = cs.GetHeaviestTipSet()
+	require.True(t, head.Equals(last))
+
+	// Now try to go back to the checkpoint. This should fail because it's too far in the past
+	// on the wrong fork.
+	err = cs.SetCheckpoint(ctx, checkpoint)
+	require.Error(t, err)
+
+	// Now extend the checkpoint chain to the same tipset.
+	for checkpoint.Height() < last.Height() {
+		ts, err := cg.NextTipSetFromMiners(checkpoint, cg.Miners[1:], 0)
+		require.NoError(t, err)
+
+		checkpoint = ts.TipSet.TipSet()
+	}
+
+	// We should still refuse to switch.
+	err = cs.SetCheckpoint(ctx, checkpoint)
+	require.Error(t, err)
+
+	// But it should be possible to set a checkpoint on a common chain
+	err = cs.SetCheckpoint(ctx, checkpointParents)
+	require.NoError(t, err)
 }

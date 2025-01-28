@@ -29,7 +29,7 @@ import (
 	"github.com/filecoin-project/go-state-types/exitcode"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/types/ethtypes"
@@ -42,6 +42,49 @@ type EVM struct{ *TestFullNode }
 
 func (f *TestFullNode) EVM() *EVM {
 	return &EVM{f}
+}
+
+// SignLegacyEIP155Transaction signs a legacy Homstead Ethereum transaction in place with the supplied private key.
+func (e *EVM) SignLegacyEIP155Transaction(tx *ethtypes.EthLegacy155TxArgs, privKey []byte, chainID big.Int) {
+	preimage, err := tx.ToRlpUnsignedMsg()
+	require.NoError(e.t, err)
+
+	// sign the RLP payload
+	signature, err := sigs.Sign(crypto.SigTypeDelegated, privKey, preimage)
+	require.NoError(e.t, err)
+
+	signature.Data = append([]byte{ethtypes.EthLegacy155TxSignaturePrefix}, signature.Data...)
+
+	chainIdMul := big.Mul(chainID, big.NewInt(2))
+	vVal := big.Add(chainIdMul, big.NewIntUnsigned(35))
+
+	switch signature.Data[len(signature.Data)-1] {
+	case 0:
+		vVal = big.Add(vVal, big.NewInt(0))
+	case 1:
+		vVal = big.Add(vVal, big.NewInt(1))
+	}
+
+	signature.Data = append(signature.Data[:65], vVal.Int.Bytes()...)
+
+	err = tx.InitialiseSignature(*signature)
+	require.NoError(e.t, err)
+}
+
+// SignLegacyHomesteadTransaction signs a legacy Homstead Ethereum transaction in place with the supplied private key.
+func (e *EVM) SignLegacyHomesteadTransaction(tx *ethtypes.EthLegacyHomesteadTxArgs, privKey []byte) {
+	preimage, err := tx.ToRlpUnsignedMsg()
+	require.NoError(e.t, err)
+
+	// sign the RLP payload
+	signature, err := sigs.Sign(crypto.SigTypeDelegated, privKey, preimage)
+	require.NoError(e.t, err)
+
+	signature.Data = append([]byte{ethtypes.EthLegacyHomesteadTxSignaturePrefix}, signature.Data...)
+	signature.Data[len(signature.Data)-1] += 27
+
+	err = tx.InitialiseSignature(*signature)
+	require.NoError(e.t, err)
 }
 
 func (e *EVM) DeployContractWithValue(ctx context.Context, sender address.Address, bytecode []byte, value big.Int) eam.CreateReturn {
@@ -122,7 +165,7 @@ func (e *EVM) InvokeSolidityWithValue(ctx context.Context, sender address.Addres
 		From:     sender,
 		Value:    value,
 		Method:   builtintypes.MethodsEVM.InvokeContract,
-		GasLimit: build.BlockGasLimit, // note: we hardcode block gas limit due to slightly broken gas estimation - https://github.com/filecoin-project/lotus/issues/10041
+		GasLimit: buildconstants.BlockGasLimit, // note: we hardcode block gas limit due to slightly broken gas estimation - https://github.com/filecoin-project/lotus/issues/10041
 		Params:   params,
 	}
 
@@ -208,7 +251,7 @@ func (e *EVM) AssertAddressBalanceConsistent(ctx context.Context, addr address.A
 }
 
 // SignTransaction signs an Ethereum transaction in place with the supplied private key.
-func (e *EVM) SignTransaction(tx *ethtypes.EthTxArgs, privKey []byte) {
+func (e *EVM) SignTransaction(tx *ethtypes.Eth1559TxArgs, privKey []byte) {
 	preimage, err := tx.ToRlpUnsignedMsg()
 	require.NoError(e.t, err)
 
@@ -216,16 +259,12 @@ func (e *EVM) SignTransaction(tx *ethtypes.EthTxArgs, privKey []byte) {
 	signature, err := sigs.Sign(crypto.SigTypeDelegated, privKey, preimage)
 	require.NoError(e.t, err)
 
-	r, s, v, err := ethtypes.RecoverSignature(*signature)
+	err = tx.InitialiseSignature(*signature)
 	require.NoError(e.t, err)
-
-	tx.V = big.Int(v)
-	tx.R = big.Int(r)
-	tx.S = big.Int(s)
 }
 
 // SubmitTransaction submits the transaction via the Eth endpoint.
-func (e *EVM) SubmitTransaction(ctx context.Context, tx *ethtypes.EthTxArgs) ethtypes.EthHash {
+func (e *EVM) SubmitTransaction(ctx context.Context, tx ethtypes.EthTransaction) ethtypes.EthHash {
 	signed, err := tx.ToRlpSignedMsg()
 	require.NoError(e.t, err)
 
@@ -252,8 +291,8 @@ func (e *EVM) ComputeContractAddress(deployer ethtypes.EthAddress, nonce uint64)
 	return *(*ethtypes.EthAddress)(hasher.Sum(nil)[12:])
 }
 
-// return eth block from a wait return
-// this necessarily goes back one parent in the chain because wait is one block ahead of execution
+// GetEthBlockFromWait returns and eth block from a wait return.
+// This necessarily goes back one parent in the chain because wait is one block ahead of execution.
 func (e *EVM) GetEthBlockFromWait(ctx context.Context, wait *api.MsgLookup) ethtypes.EthBlock {
 	c, err := wait.TipSet.Cid()
 	require.NoError(e.t, err)
@@ -293,17 +332,26 @@ func (e *EVM) InvokeContractByFuncNameExpectExit(ctx context.Context, fromAddr a
 }
 
 func (e *EVM) WaitTransaction(ctx context.Context, hash ethtypes.EthHash) (*api.EthTxReceipt, error) {
-	if mcid, err := e.EthGetMessageCidByTransactionHash(ctx, &hash); err != nil {
-		return nil, err
-	} else if mcid == nil {
-		return nil, xerrors.Errorf("couldn't find message CID for txn hash: %s", hash)
-	} else {
+	retries := 3
+	var mcid *cid.Cid
+	var err error
+
+	for retries > 0 {
+		if mcid, err = e.EthGetMessageCidByTransactionHash(ctx, &hash); err != nil {
+			return nil, err
+		} else if mcid == nil {
+			retries--
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
 		e.WaitMsg(ctx, *mcid)
 		return e.EthGetTransactionReceipt(ctx, hash)
 	}
+	return nil, xerrors.Errorf("couldn't find message CID for txn hash: %s", hash)
 }
 
-// function signatures are the first 4 bytes of the hash of the function name and types
+// CalcFuncSignature returns the first 4 bytes of the hash of the function name and types
 func CalcFuncSignature(funcName string) []byte {
 	hasher := sha3.NewLegacyKeccak256()
 	hasher.Write([]byte(funcName))
@@ -362,7 +410,7 @@ func removeLeadingZeros(data []byte) []byte {
 	return data[firstNonZeroIndex:]
 }
 
-func SetupFEVMTest(t *testing.T) (context.Context, context.CancelFunc, *TestFullNode) {
+func SetupFEVMTest(t *testing.T, opts ...interface{}) (context.Context, context.CancelFunc, *TestFullNode) {
 	// make all logs extra quiet for fevm tests
 	lvl, err := logging.LevelFromString("error")
 	if err != nil {
@@ -371,7 +419,9 @@ func SetupFEVMTest(t *testing.T) (context.Context, context.CancelFunc, *TestFull
 	logging.SetAllLoggers(lvl)
 
 	blockTime := 100 * time.Millisecond
-	client, _, ens := EnsembleMinimal(t, MockProofs(), ThroughRPC())
+
+	opts = append([]interface{}{MockProofs(), ThroughRPC()}, opts...)
+	client, _, ens := EnsembleMinimal(t, opts...)
 	ens.InterconnectAll().BeginMining(blockTime)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 

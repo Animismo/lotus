@@ -20,6 +20,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/metrics"
 )
 
 var log = logging.Logger("paych")
@@ -33,7 +34,7 @@ type stateManagerAPI interface {
 	Call(ctx context.Context, msg *types.Message, ts *types.TipSet) (*api.InvocResult, error)
 }
 
-// paychAPI defines the API methods needed by the payment channel manager
+// PaychAPI defines the API methods needed by the payment channel manager
 type PaychAPI interface {
 	StateAccountKey(context.Context, address.Address, types.TipSetKey) (address.Address, error)
 	StateWaitMsg(ctx context.Context, cid cid.Cid, confidence uint64, limit abi.ChainEpoch, allowReplaced bool) (*api.MsgLookup, error)
@@ -82,13 +83,16 @@ func NewManager(ctx context.Context, shutdown func(), sm stmgr.StateManagerAPI, 
 
 // newManager is used by the tests to supply mocks
 func newManager(pchstore *Store, pchapi managerAPI) (*Manager, error) {
+	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
+
 	pm := &Manager{
 		store:    pchstore,
 		sa:       &stateAccessor{sm: pchapi},
 		channels: make(map[string]*channelAccessor),
 		pchapi:   pchapi,
 	}
-	pm.ctx, pm.shutdown = context.WithCancel(context.Background())
+	pm.ctx, pm.shutdown = context.WithCancel(ctx)
 	return pm, pm.Start()
 }
 
@@ -332,8 +336,9 @@ func (pm *Manager) trackInboundChannel(ctx context.Context, ch address.Address) 
 	return pm.store.TrackChannel(ctx, stateCi)
 }
 
-// TODO: secret vs proof doesn't make sense, there is only one, not two
 func (pm *Manager) SubmitVoucher(ctx context.Context, ch address.Address, sv *paychtypes.SignedVoucher, secret []byte, proof []byte) (cid.Cid, error) {
+	// TODO: secret vs proof doesn't make sense, there is only one, not two
+
 	if len(proof) > 0 {
 		return cid.Undef, errProofNotSupported
 	}

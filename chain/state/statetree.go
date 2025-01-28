@@ -3,6 +3,7 @@ package state
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ipfs/go-cid"
@@ -156,7 +157,7 @@ func VersionForNetwork(ver network.Version) (types.StateTreeVersion, error) {
 	case network.Version13, network.Version14, network.Version15, network.Version16, network.Version17:
 		return types.StateTreeVersion4, nil
 
-	case network.Version18, network.Version19, network.Version20, network.Version21, network.Version22:
+	case network.Version18, network.Version19, network.Version20, network.Version21, network.Version22, network.Version23, network.Version24, network.Version25:
 		return types.StateTreeVersion5, nil
 
 	default:
@@ -230,7 +231,7 @@ func NewStateTree(cst cbor.IpldStore, ver types.StateTreeVersion) (*StateTree, e
 		Store:   cst,
 		snaps:   newStateSnaps(),
 	}
-	s.lookupIDFun = s.lookupIDinternal
+	s.lookupIDFun = s.lookupInternalIDAddress
 	return s, nil
 }
 
@@ -302,13 +303,13 @@ func LoadStateTree(cst cbor.IpldStore, c cid.Cid) (*StateTree, error) {
 		Store:   cst,
 		snaps:   newStateSnaps(),
 	}
-	s.lookupIDFun = s.lookupIDinternal
+	s.lookupIDFun = s.lookupInternalIDAddress
 
 	return s, nil
 }
 
 func (st *StateTree) SetActor(addr address.Address, act *types.Actor) error {
-	iaddr, err := st.LookupID(addr)
+	iaddr, err := st.LookupIDAddress(addr)
 	if err != nil {
 		return xerrors.Errorf("ID lookup failed: %w", err)
 	}
@@ -318,7 +319,7 @@ func (st *StateTree) SetActor(addr address.Address, act *types.Actor) error {
 	return nil
 }
 
-func (st *StateTree) lookupIDinternal(addr address.Address) (address.Address, error) {
+func (st *StateTree) lookupInternalIDAddress(addr address.Address) (address.Address, error) {
 	act, err := st.GetActor(init_.Address)
 	if err != nil {
 		return address.Undef, xerrors.Errorf("getting init actor: %w", err)
@@ -339,8 +340,8 @@ func (st *StateTree) lookupIDinternal(addr address.Address) (address.Address, er
 	return a, err
 }
 
-// LookupID gets the ID address of this actor's `addr` stored in the `InitActor`.
-func (st *StateTree) LookupID(addr address.Address) (address.Address, error) {
+// LookupIDAddress gets the ID address of this actor's `addr` stored in the `InitActor`.
+func (st *StateTree) LookupIDAddress(addr address.Address) (address.Address, error) {
 	if addr.Protocol() == address.ID {
 		return addr, nil
 	}
@@ -366,9 +367,9 @@ func (st *StateTree) GetActor(addr address.Address) (*types.Actor, error) {
 	}
 
 	// Transform `addr` to its ID format.
-	iaddr, err := st.LookupID(addr)
+	iaddr, err := st.LookupIDAddress(addr)
 	if err != nil {
-		if xerrors.Is(err, types.ErrActorNotFound) {
+		if errors.Is(err, types.ErrActorNotFound) {
 			return nil, xerrors.Errorf("resolution lookup failed (%s): %w", addr, err)
 		}
 		return nil, xerrors.Errorf("address resolution: %w", err)
@@ -411,9 +412,9 @@ func (st *StateTree) DeleteActor(addr address.Address) error {
 		return xerrors.Errorf("DeleteActor called on undefined address")
 	}
 
-	iaddr, err := st.LookupID(addr)
+	iaddr, err := st.LookupIDAddress(addr)
 	if err != nil {
-		if xerrors.Is(err, types.ErrActorNotFound) {
+		if errors.Is(err, types.ErrActorNotFound) {
 			return xerrors.Errorf("resolution lookup failed (%s): %w", addr, err)
 		}
 		return xerrors.Errorf("address resolution: %w", err)

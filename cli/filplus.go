@@ -30,7 +30,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/blockstore"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/datacap"
@@ -39,7 +39,7 @@ import (
 	"github.com/filecoin-project/lotus/lib/tablewriter"
 )
 
-var filplusCmd = &cli.Command{
+var FilplusCmd = &cli.Command{
 	Name:  "filplus",
 	Usage: "Interact with the verified registry actor used by Filplus",
 	Flags: []cli.Flag{},
@@ -134,7 +134,7 @@ var filplusVerifyClientCmd = &cli.Command{
 
 		fmt.Printf("message sent, now waiting on cid: %s\n", smsg.Cid())
 
-		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
@@ -330,7 +330,7 @@ var filplusListAllocationsCmd = &cli.Command{
 				tablewriter.Col(pieceSize),
 				tablewriter.Col(tMin),
 				tablewriter.Col(tMax),
-				tablewriter.NewLineCol(expr))
+				tablewriter.Col(expr))
 			// populate it with content
 			for _, alloc := range allocs {
 				tw.Write(alloc)
@@ -393,6 +393,11 @@ var filplusListClaimsCmd = &cli.Command{
 		&cli.BoolFlag{
 			Name:  "expired",
 			Usage: "list only expired claims",
+		},
+		&cli.BoolFlag{
+			Name:  "json",
+			Usage: "output results in json format",
+			Value: false,
 		},
 	},
 	Action: func(cctx *cli.Context) error {
@@ -474,7 +479,7 @@ var filplusListClaimsCmd = &cli.Command{
 				tablewriter.Col(tMin),
 				tablewriter.Col(tMax),
 				tablewriter.Col(tStart),
-				tablewriter.NewLineCol(sector))
+				tablewriter.Col(sector))
 			// populate it with content
 			for _, alloc := range claimList {
 
@@ -609,7 +614,7 @@ var filplusRemoveExpiredAllocationsCmd = &cli.Command{
 
 		fmt.Printf("message sent, now waiting on cid: %s\n", smsg.Cid())
 
-		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
@@ -702,7 +707,7 @@ var filplusRemoveExpiredClaimsCmd = &cli.Command{
 
 		fmt.Printf("message sent, now waiting on cid: %s\n", smsg.Cid())
 
-		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		mwait, err := api.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
@@ -934,7 +939,11 @@ var filplusSignRemoveDataCapProposal = &cli.Command{
 
 var filplusExtendClaimCmd = &cli.Command{
 	Name:  "extend-claim",
-	Usage: "extend claim expiration (TermMax)",
+	Usage: "extends claim expiration (TermMax)",
+	UsageText: `Extends claim expiration (TermMax).
+If the client is original client then claim can be extended to maximum 5 years and no Datacap is required.
+If the client id different then claim can be extended up to maximum 5 years from now and Datacap is required.
+`,
 	Flags: []cli.Flag{
 		&cli.Int64Flag{
 			Name:    "term-max",
@@ -964,7 +973,12 @@ var filplusExtendClaimCmd = &cli.Command{
 		&cli.IntFlag{
 			Name:  "confidence",
 			Usage: "number of block confirmations to wait for",
-			Value: int(build.MessageConfidence),
+			Value: int(buildconstants.MessageConfidence),
+		},
+		&cli.IntFlag{
+			Name:  "batch-size",
+			Usage: "number of extend requests per batch. If set incorrectly, this will lead to out of gas error",
+			Value: 500,
 		},
 	},
 	ArgsUsage: "<claim1> <claim2> ... or <miner1=claim1> <miner2=claims2> ...",
@@ -1069,7 +1083,7 @@ var filplusExtendClaimCmd = &cli.Command{
 			}
 		}
 
-		msgs, err := CreateExtendClaimMsg(ctx, api, claimMap, miners, clientAddr, abi.ChainEpoch(tmax), all, cctx.Bool("assume-yes"))
+		msgs, err := CreateExtendClaimMsg(ctx, api, claimMap, miners, clientAddr, abi.ChainEpoch(tmax), all, cctx.Bool("assume-yes"), cctx.Int("batch-size"))
 		if err != nil {
 			return err
 		}
@@ -1122,7 +1136,7 @@ type ProvInfo struct {
 // 6. Extend all claims for multiple miner IDs with different client address (2 messages)
 // 7. Extend specified claims for a miner ID with different client address (2 messages)
 // 8. Extend specific claims for specific miner ID with different client address (2 messages)
-func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifregtypes13.ClaimId]ProvInfo, miners []string, wallet address.Address, tmax abi.ChainEpoch, all, assumeYes bool) ([]*types.Message, error) {
+func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifregtypes13.ClaimId]ProvInfo, miners []string, wallet address.Address, tmax abi.ChainEpoch, all, assumeYes bool, batchSize int) ([]*types.Message, error) {
 
 	ac, err := api.StateLookupID(ctx, wallet, types.EmptyTSK)
 	if err != nil {
@@ -1141,7 +1155,7 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 	}
 
 	var terms []verifregtypes13.ClaimTerm
-	var newClaims []verifregtypes13.ClaimExtensionRequest
+	newClaims := make(map[verifregtypes13.ClaimExtensionRequest]big.Int)
 	rDataCap := big.NewInt(0)
 
 	// If --all is set
@@ -1162,17 +1176,23 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 			for claimID, claim := range claims {
 				claimID := claimID
 				claim := claim
-				if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
-					// If client is not same - needs to burn datacap
-					if claim.Client != wid {
-						newClaims = append(newClaims, verifregtypes13.ClaimExtensionRequest{
+				// If the client is not the original client - burn datacap
+				if claim.Client != wid {
+					// The new duration should be greater than the original deal duration and claim should not already be expired
+					if head.Height()+tmax-claim.TermStart > claim.TermMax-claim.TermStart && claim.TermStart+claim.TermMax > head.Height() {
+						req := verifregtypes13.ClaimExtensionRequest{
 							Claim:    verifregtypes13.ClaimId(claimID),
 							Provider: abi.ActorID(mid),
-							TermMax:  tmax,
-						})
+							TermMax:  head.Height() + tmax - claim.TermStart,
+						}
+						newClaims[req] = big.NewInt(int64(claim.Size))
 						rDataCap.Add(big.NewInt(int64(claim.Size)).Int, rDataCap.Int)
-						continue
 					}
+					// If new duration shorter than the original duration then do nothing
+					continue
+				}
+				// For original client, compare duration(TermMax) and claim should not already be expired
+				if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
 					terms = append(terms, verifregtypes13.ClaimTerm{
 						ClaimId:  verifregtypes13.ClaimId(claimID),
 						TermMax:  tmax,
@@ -1204,17 +1224,23 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 			if !ok {
 				return nil, xerrors.Errorf("claim %d not found for provider %s", claimID, miners[0])
 			}
-			if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
-				// If client is not same - needs to burn datacap
-				if claim.Client != wid {
-					newClaims = append(newClaims, verifregtypes13.ClaimExtensionRequest{
+			// If the client is not the original client - burn datacap
+			if claim.Client != wid {
+				// The new duration should be greater than the original deal duration and claim should not already be expired
+				if head.Height()+tmax-claim.TermStart > claim.TermMax-claim.TermStart && claim.TermStart+claim.TermMax > head.Height() {
+					req := verifregtypes13.ClaimExtensionRequest{
 						Claim:    claimID,
 						Provider: abi.ActorID(mid),
-						TermMax:  tmax,
-					})
+						TermMax:  head.Height() + tmax - claim.TermStart,
+					}
+					newClaims[req] = big.NewInt(int64(claim.Size))
 					rDataCap.Add(big.NewInt(int64(claim.Size)).Int, rDataCap.Int)
-					continue
 				}
+				// If new duration shorter than the original duration then do nothing
+				continue
+			}
+			// For original client, compare duration(TermMax) and claim should not already be expired
+			if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
 				terms = append(terms, verifregtypes13.ClaimTerm{
 					ClaimId:  claimID,
 					TermMax:  tmax,
@@ -1235,17 +1261,23 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 			if claim == nil {
 				return nil, xerrors.Errorf("claim %d not found in the actor state", claimID)
 			}
-			if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
-				// If client is not same - needs to burn datacap
-				if claim.Client != wid {
-					newClaims = append(newClaims, verifregtypes13.ClaimExtensionRequest{
+			// If the client is not the original client - burn datacap
+			if claim.Client != wid {
+				// The new duration should be greater than the original deal duration and claim should not already be expired
+				if head.Height()+tmax-claim.TermStart > claim.TermMax-claim.TermStart && claim.TermStart+claim.TermMax > head.Height() {
+					req := verifregtypes13.ClaimExtensionRequest{
 						Claim:    claimID,
 						Provider: prov.ID,
-						TermMax:  tmax,
-					})
+						TermMax:  head.Height() + tmax - claim.TermStart,
+					}
+					newClaims[req] = big.NewInt(int64(claim.Size))
 					rDataCap.Add(big.NewInt(int64(claim.Size)).Int, rDataCap.Int)
-					continue
 				}
+				// If new duration shorter than the original duration then do nothing
+				continue
+			}
+			// For original client, compare duration(TermMax) and claim should not already be expired
+			if claim.TermMax < tmax && claim.TermStart+claim.TermMax > head.Height() {
 				terms = append(terms, verifregtypes13.ClaimTerm{
 					ClaimId:  claimID,
 					TermMax:  tmax,
@@ -1258,66 +1290,32 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 	var msgs []*types.Message
 
 	if len(terms) > 0 {
-		params, err := actors.SerializeParams(&verifregtypes13.ExtendClaimTermsParams{
-			Terms: terms,
-		})
+		// Batch in 500 to avoid running out of gas
+		for i := 0; i < len(terms); i += batchSize {
+			batchEnd := i + batchSize
+			if batchEnd > len(terms) {
+				batchEnd = len(terms)
+			}
 
-		if err != nil {
-			return nil, xerrors.Errorf("failed to searialise the parameters: %s", err)
+			batch := terms[i:batchEnd]
+
+			params, err := actors.SerializeParams(&verifregtypes13.ExtendClaimTermsParams{
+				Terms: batch,
+			})
+			if err != nil {
+				return nil, xerrors.Errorf("failed to searialise the parameters: %s", err)
+			}
+			oclaimMsg := &types.Message{
+				To:     verifreg.Address,
+				From:   wallet,
+				Method: verifreg.Methods.ExtendClaimTerms,
+				Params: params,
+			}
+			msgs = append(msgs, oclaimMsg)
 		}
-
-		oclaimMsg := &types.Message{
-			To:     verifreg.Address,
-			From:   wallet,
-			Method: verifreg.Methods.ExtendClaimTerms,
-			Params: params,
-		}
-
-		msgs = append(msgs, oclaimMsg)
 	}
 
 	if len(newClaims) > 0 {
-		// Get datacap balance
-		aDataCap, err := api.StateVerifiedClientStatus(ctx, wallet, types.EmptyTSK)
-		if err != nil {
-			return nil, err
-		}
-
-		if aDataCap == nil {
-			return nil, xerrors.Errorf("wallet %s does not have any datacap", wallet)
-		}
-
-		// Check that we have enough data cap to make the allocation
-		if rDataCap.GreaterThan(big.NewInt(aDataCap.Int64())) {
-			return nil, xerrors.Errorf("requested datacap %s is greater then the available datacap %s", rDataCap, aDataCap)
-		}
-
-		ncparams, err := actors.SerializeParams(&verifregtypes13.AllocationRequests{
-			Extensions: newClaims,
-		})
-
-		if err != nil {
-			return nil, xerrors.Errorf("failed to searialise the parameters: %s", err)
-		}
-
-		transferParams, err := actors.SerializeParams(&datacap2.TransferParams{
-			To:           builtin.VerifiedRegistryActorAddr,
-			Amount:       big.Mul(rDataCap, builtin.TokenPrecision),
-			OperatorData: ncparams,
-		})
-
-		if err != nil {
-			return nil, xerrors.Errorf("failed to serialize transfer parameters: %s", err)
-		}
-
-		nclaimMsg := &types.Message{
-			To:     builtin.DatacapActorAddr,
-			From:   wallet,
-			Method: datacap.Methods.TransferExported,
-			Params: transferParams,
-			Value:  big.Zero(),
-		}
-
 		if !assumeYes {
 			out := fmt.Sprintf("Some of the specified allocation have a different client address and will require %d Datacap to extend. Proceed? Yes [Y/y] / No [N/n], Ctrl+C (^C) to exit", rDataCap.Int)
 			validate := func(input string) error {
@@ -1353,7 +1351,69 @@ func CreateExtendClaimMsg(ctx context.Context, api api.FullNode, pcm map[verifre
 			}
 		}
 
-		msgs = append(msgs, nclaimMsg)
+		// Get datacap balance
+		aDataCap, err := api.StateVerifiedClientStatus(ctx, wallet, types.EmptyTSK)
+		if err != nil {
+			return nil, err
+		}
+
+		if aDataCap == nil {
+			return nil, xerrors.Errorf("wallet %s does not have any datacap", wallet)
+		}
+
+		// Check that we have enough data cap to make the allocation
+		if rDataCap.GreaterThan(big.NewInt(aDataCap.Int64())) {
+			return nil, xerrors.Errorf("requested datacap %s is greater then the available datacap %s", rDataCap, aDataCap)
+		}
+
+		// Create a map of just keys, so we can easily batch based on the numeric keys
+		keys := make([]verifregtypes13.ClaimExtensionRequest, 0, len(newClaims))
+		for k := range newClaims {
+			keys = append(keys, k)
+		}
+
+		// Batch in 500 to avoid running out of gas
+		for i := 0; i < len(keys); i += batchSize {
+			batchEnd := i + batchSize
+			if batchEnd > len(newClaims) {
+				batchEnd = len(newClaims)
+			}
+
+			batch := keys[i:batchEnd]
+
+			// Calculate Datacap for this batch
+			dcap := big.NewInt(0)
+			for _, k := range batch {
+				dc := newClaims[k]
+				dcap.Add(dcap.Int, dc.Int)
+			}
+
+			ncparams, err := actors.SerializeParams(&verifregtypes13.AllocationRequests{
+				Extensions: batch,
+			})
+			if err != nil {
+				return nil, xerrors.Errorf("failed to searialise the parameters: %s", err)
+			}
+
+			transferParams, err := actors.SerializeParams(&datacap2.TransferParams{
+				To:           builtin.VerifiedRegistryActorAddr,
+				Amount:       big.Mul(dcap, builtin.TokenPrecision),
+				OperatorData: ncparams,
+			})
+
+			if err != nil {
+				return nil, xerrors.Errorf("failed to serialize transfer parameters: %s", err)
+			}
+
+			nclaimMsg := &types.Message{
+				To:     builtin.DatacapActorAddr,
+				From:   wallet,
+				Method: datacap.Methods.TransferExported,
+				Params: transferParams,
+				Value:  big.Zero(),
+			}
+			msgs = append(msgs, nclaimMsg)
+		}
 	}
 
 	return msgs, nil

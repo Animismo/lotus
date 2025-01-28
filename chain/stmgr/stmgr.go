@@ -22,7 +22,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v8/actors/migration/nv16"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 	_init "github.com/filecoin-project/lotus/chain/actors/builtin/init"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
@@ -49,7 +49,7 @@ type StateManagerAPI interface {
 	Call(ctx context.Context, msg *types.Message, ts *types.TipSet) (*api.InvocResult, error)
 	GetPaychState(ctx context.Context, addr address.Address, ts *types.TipSet) (*types.Actor, paych.State, error)
 	LoadActorTsk(ctx context.Context, addr address.Address, tsk types.TipSetKey) (*types.Actor, error)
-	LookupID(ctx context.Context, addr address.Address, ts *types.TipSet) (address.Address, error)
+	LookupIDAddress(ctx context.Context, addr address.Address, ts *types.TipSet) (address.Address, error)
 	ResolveToDeterministicAddress(ctx context.Context, addr address.Address, ts *types.TipSet) (address.Address, error)
 }
 
@@ -156,7 +156,7 @@ type StateManager struct {
 	tsExecMonitor ExecMonitor
 	beacon        beacon.Schedule
 
-	msgIndex index.MsgIndex
+	chainIndexer index.Indexer
 
 	// We keep a small cache for calls to ExecutionTrace which helps improve
 	// performance for node operators like exchanges and block explorers
@@ -177,7 +177,8 @@ type tipSetCacheEntry struct {
 	invocTrace    []*api.InvocResult
 }
 
-func NewStateManager(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder, us UpgradeSchedule, beacon beacon.Schedule, metadataDs dstore.Batching, msgIndex index.MsgIndex) (*StateManager, error) {
+func NewStateManager(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder, us UpgradeSchedule, beacon beacon.Schedule,
+	metadataDs dstore.Batching, chainIndexer index.Indexer) (*StateManager, error) {
 	// If we have upgrades, make sure they're in-order and make sense.
 	if err := us.Validate(); err != nil {
 		return nil, err
@@ -186,7 +187,7 @@ func NewStateManager(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder,
 	stateMigrations := make(map[abi.ChainEpoch]*migration, len(us))
 	expensiveUpgrades := make(map[abi.ChainEpoch]struct{}, len(us))
 	var networkVersions []versionSpec
-	lastVersion := build.GenesisNetworkVersion
+	lastVersion := buildconstants.GenesisNetworkVersion
 	if len(us) > 0 {
 		// If we have any upgrades, process them and create a version
 		// schedule.
@@ -242,13 +243,13 @@ func NewStateManager(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder,
 			tree: nil,
 		},
 		compWait:       make(map[string]chan struct{}),
-		msgIndex:       msgIndex,
+		chainIndexer:   chainIndexer,
 		execTraceCache: execTraceCache,
 	}, nil
 }
 
-func NewStateManagerWithUpgradeScheduleAndMonitor(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder, us UpgradeSchedule, b beacon.Schedule, em ExecMonitor, metadataDs dstore.Batching, msgIndex index.MsgIndex) (*StateManager, error) {
-	sm, err := NewStateManager(cs, exec, sys, us, b, metadataDs, msgIndex)
+func NewStateManagerWithUpgradeScheduleAndMonitor(cs *store.ChainStore, exec Executor, sys vm.SyscallBuilder, us UpgradeSchedule, b beacon.Schedule, em ExecMonitor, metadataDs dstore.Batching, chainIndexer index.Indexer) (*StateManager, error) {
+	sm, err := NewStateManager(cs, exec, sys, us, b, metadataDs, chainIndexer)
 	if err != nil {
 		return nil, err
 	}
@@ -400,13 +401,30 @@ func (sm *StateManager) GetBlsPublicKey(ctx context.Context, addr address.Addres
 	return kaddr.Payload(), nil
 }
 
-func (sm *StateManager) LookupID(ctx context.Context, addr address.Address, ts *types.TipSet) (address.Address, error) {
+func (sm *StateManager) LookupIDAddress(_ context.Context, addr address.Address, ts *types.TipSet) (address.Address, error) {
+	// Check for the fast route first to avoid unnecessary CBOR store instantiation and state tree load.
+	if addr.Protocol() == address.ID {
+		return addr, nil
+	}
+
 	cst := cbor.NewCborStore(sm.cs.StateBlockstore())
 	state, err := state.LoadStateTree(cst, sm.parentState(ts))
 	if err != nil {
 		return address.Undef, xerrors.Errorf("load state tree: %w", err)
 	}
-	return state.LookupID(addr)
+	return state.LookupIDAddress(addr)
+}
+
+func (sm *StateManager) LookupID(ctx context.Context, addr address.Address, ts *types.TipSet) (abi.ActorID, error) {
+	idAddr, err := sm.LookupIDAddress(ctx, addr, ts)
+	if err != nil {
+		return 0, xerrors.Errorf("state manager lookup id: %w", err)
+	}
+	id, err := address.IDFromAddress(idAddr)
+	if err != nil {
+		return 0, xerrors.Errorf("resolve actor id: id from addr: %w", err)
+	}
+	return abi.ActorID(id), nil
 }
 
 func (sm *StateManager) LookupRobustAddress(ctx context.Context, idAddr address.Address, ts *types.TipSet) (address.Address, error) {
@@ -555,9 +573,17 @@ func (sm *StateManager) GetRandomnessDigestFromBeacon(ctx context.Context, randE
 	}
 
 	r := rand.NewStateRand(sm.ChainStore(), pts.Cids(), sm.beacon, sm.GetNetworkVersion)
-
 	return r.GetBeaconRandomness(ctx, randEpoch)
+}
 
+func (sm *StateManager) GetBeaconEntry(ctx context.Context, randEpoch abi.ChainEpoch, tsk types.TipSetKey) (*types.BeaconEntry, error) {
+	pts, err := sm.ChainStore().GetTipSetFromKey(ctx, tsk)
+	if err != nil {
+		return nil, xerrors.Errorf("loading tipset %s: %w", tsk, err)
+	}
+
+	r := rand.NewStateRand(sm.ChainStore(), pts.Cids(), sm.beacon, sm.GetNetworkVersion)
+	return r.GetBeaconEntry(ctx, randEpoch)
 }
 
 func (sm *StateManager) GetRandomnessDigestFromTickets(ctx context.Context, randEpoch abi.ChainEpoch, tsk types.TipSetKey) ([32]byte, error) {
@@ -567,6 +593,5 @@ func (sm *StateManager) GetRandomnessDigestFromTickets(ctx context.Context, rand
 	}
 
 	r := rand.NewStateRand(sm.ChainStore(), pts.Cids(), sm.beacon, sm.GetNetworkVersion)
-
 	return r.GetChainRandomness(ctx, randEpoch)
 }

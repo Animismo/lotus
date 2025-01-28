@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/cheggaaa/pb/v3"
 	"github.com/ipfs/go-cid"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
-	"gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
@@ -29,8 +29,11 @@ import (
 
 	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/chain/actors"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/miner"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/power"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/filecoin-project/lotus/cli/spcli"
 	"github.com/filecoin-project/lotus/lib/parmap"
 	"github.com/filecoin-project/lotus/node/repo"
 	"github.com/filecoin-project/lotus/storage/paths"
@@ -44,147 +47,24 @@ var sectorsCmd = &cli.Command{
 	Usage: "Tools for interacting with sectors",
 	Flags: []cli.Flag{},
 	Subcommands: []*cli.Command{
-		terminateSectorCmd,
+		spcli.TerminateSectorCmd(shedGetActor),
 		terminateSectorPenaltyEstimationCmd,
 		visAllocatedSectorsCmd,
 		dumpRLESectorCmd,
+		dumpSectorOnChainInfoCmd,
 		sectorReadCmd,
 		sectorDeleteCmd,
 	},
 }
 
-var terminateSectorCmd = &cli.Command{
-	Name:      "terminate",
-	Usage:     "Forcefully terminate a sector (WARNING: This means losing power and pay a one-time termination penalty(including collateral) for the terminated sector)",
-	ArgsUsage: "[sectorNum1 sectorNum2 ...]",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  "actor",
-			Usage: "specify the address of miner actor",
-		},
-		&cli.BoolFlag{
-			Name:  "really-do-it",
-			Usage: "pass this flag if you know what you are doing",
-		},
-		&cli.StringFlag{
-			Name:  "from",
-			Usage: "specify the address to send the terminate message from",
-		},
-	},
-	Action: func(cctx *cli.Context) error {
-		if cctx.NArg() < 1 {
-			return lcli.ShowHelp(cctx, fmt.Errorf("at least one sector must be specified"))
-		}
+func shedGetActor(cctx *cli.Context) (address.Address, error) {
+	minerApi, acloser, err := lcli.GetStorageMinerAPI(cctx)
+	if err != nil {
+		return address.Address{}, err
+	}
+	defer acloser()
 
-		var maddr address.Address
-		if act := cctx.String("actor"); act != "" {
-			var err error
-			maddr, err = address.NewFromString(act)
-			if err != nil {
-				return fmt.Errorf("parsing address %s: %w", act, err)
-			}
-		}
-
-		if !cctx.Bool("really-do-it") {
-			return fmt.Errorf("this is a command for advanced users, only use it if you are sure of what you are doing")
-		}
-
-		nodeApi, closer, err := lcli.GetFullNodeAPI(cctx)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		ctx := lcli.ReqContext(cctx)
-
-		if maddr.Empty() {
-			minerApi, acloser, err := lcli.GetStorageMinerAPI(cctx)
-			if err != nil {
-				return err
-			}
-			defer acloser()
-
-			maddr, err = minerApi.ActorAddress(ctx)
-			if err != nil {
-				return err
-			}
-		}
-
-		mi, err := nodeApi.StateMinerInfo(ctx, maddr, types.EmptyTSK)
-		if err != nil {
-			return err
-		}
-
-		terminationDeclarationParams := []miner2.TerminationDeclaration{}
-
-		for _, sn := range cctx.Args().Slice() {
-			sectorNum, err := strconv.ParseUint(sn, 10, 64)
-			if err != nil {
-				return fmt.Errorf("could not parse sector number: %w", err)
-			}
-
-			sectorbit := bitfield.New()
-			sectorbit.Set(sectorNum)
-
-			loca, err := nodeApi.StateSectorPartition(ctx, maddr, abi.SectorNumber(sectorNum), types.EmptyTSK)
-			if err != nil {
-				return fmt.Errorf("get state sector partition %s", err)
-			}
-
-			para := miner2.TerminationDeclaration{
-				Deadline:  loca.Deadline,
-				Partition: loca.Partition,
-				Sectors:   sectorbit,
-			}
-
-			terminationDeclarationParams = append(terminationDeclarationParams, para)
-		}
-
-		terminateSectorParams := &miner2.TerminateSectorsParams{
-			Terminations: terminationDeclarationParams,
-		}
-
-		sp, err := actors.SerializeParams(terminateSectorParams)
-		if err != nil {
-			return xerrors.Errorf("serializing params: %w", err)
-		}
-
-		var fromAddr address.Address
-		if from := cctx.String("from"); from != "" {
-			var err error
-			fromAddr, err = address.NewFromString(from)
-			if err != nil {
-				return fmt.Errorf("parsing address %s: %w", from, err)
-			}
-		} else {
-			fromAddr = mi.Worker
-		}
-
-		smsg, err := nodeApi.MpoolPushMessage(ctx, &types.Message{
-			From:   fromAddr,
-			To:     maddr,
-			Method: builtin.MethodsMiner.TerminateSectors,
-
-			Value:  big.Zero(),
-			Params: sp,
-		}, nil)
-		if err != nil {
-			return xerrors.Errorf("mpool push message: %w", err)
-		}
-
-		fmt.Println("sent termination message:", smsg.Cid())
-
-		wait, err := nodeApi.StateWaitMsg(ctx, smsg.Cid(), uint64(cctx.Int("confidence")))
-		if err != nil {
-			return err
-		}
-
-		if wait.Receipt.ExitCode.IsError() {
-			return fmt.Errorf("terminate sectors message returned exit %d", wait.Receipt.ExitCode)
-		}
-
-		return nil
-	},
+	return minerApi.ActorAddress(cctx.Context)
 }
 
 func findPenaltyInInternalExecutions(prefix string, trace []types.ExecutionTrace) {
@@ -247,6 +127,18 @@ var terminateSectorPenaltyEstimationCmd = &cli.Command{
 			return err
 		}
 
+		ownerAddr, err := nodeApi.StateAccountKey(ctx, mi.Owner, types.EmptyTSK)
+		if err != nil {
+			ownerAddr = mi.Owner
+		}
+
+		var fromAddr address.Address
+		if ownerAddr.Protocol() == address.Delegated {
+			fromAddr = mi.Worker
+		} else {
+			fromAddr = mi.Owner
+		}
+
 		terminationDeclarationParams := []miner2.TerminationDeclaration{}
 
 		for _, sn := range cctx.Args().Slice() {
@@ -282,7 +174,7 @@ var terminateSectorPenaltyEstimationCmd = &cli.Command{
 		}
 
 		msg := &types.Message{
-			From:   mi.Owner,
+			From:   fromAddr,
 			To:     maddr,
 			Method: builtin.MethodsMiner.TerminateSectors,
 
@@ -665,20 +557,16 @@ fr32 padding is removed from the output.`,
 
 		l := int64(abi.PaddedPieceSize(length).Unpadded())
 
-		bar := pb.New64(l)
+		bar := pb.Full.Start64(l)
 		br := bar.NewProxyReader(upr)
-		bar.ShowTimeLeft = true
-		bar.ShowPercent = true
-		bar.ShowSpeed = true
-		bar.Units = pb.U_BYTES
-		bar.Output = os.Stderr
-		bar.Start()
 
 		_, err = io.CopyN(os.Stdout, br, l)
+
+		bar.Finish()
+
 		if err != nil {
 			return xerrors.Errorf("reading data: %w", err)
 		}
-
 		return nil
 	},
 }
@@ -762,6 +650,92 @@ var sectorDeleteCmd = &cli.Command{
 		if err != nil {
 			return xerrors.Errorf("removing sector: %w", err)
 		}
+
+		return nil
+	},
+}
+
+var dumpSectorOnChainInfoCmd = &cli.Command{
+	Name:  "dump-sectors",
+	Usage: "Dump SectorOnChainInfo in CSV format for all sectors for all miners that have claimed power",
+	Action: func(cctx *cli.Context) error {
+		ctx := lcli.ReqContext(cctx)
+
+		h, err := loadChainStore(ctx, cctx.String("repo"))
+		if err != nil {
+			return xerrors.Errorf("loading chainstore: %w", err)
+		}
+		defer h.closer()
+
+		ts, err := lcli.LoadTipSet(ctx, cctx, &ChainStoreTipSetResolver{Chain: h.cs})
+		if err != nil {
+			return xerrors.Errorf("loading tipset: %w", err)
+		}
+
+		powerActor, err := h.sm.LoadActor(ctx, power.Address, ts)
+		if err != nil {
+			return xerrors.Errorf("failed to load power actor: %w", err)
+		}
+
+		powerState, err := power.Load(h.cs.ActorStore(ctx), powerActor)
+		if err != nil {
+			return xerrors.Errorf("failed to load power actor state: %w", err)
+		}
+
+		_, _ = fmt.Fprintf(cctx.App.Writer,
+			"Miner,SectorNumber,SealProof,DealIDCount,Activation,Expiration,DealWeight,VerifiedDealWeight,"+
+				"InitialPledge,ExpectedDayReward,ExpectedStoragePledge,PowerBaseEpoch,Flags\n")
+
+		var count int
+		err = powerState.ForEachClaim(func(maddr address.Address, claim power.Claim) error {
+			act, err := h.sm.LoadActorTsk(ctx, maddr, ts.Key())
+			if err != nil {
+				return xerrors.Errorf("failed to load miner actor: %w", err)
+			}
+
+			mas, err := miner.Load(h.sm.ChainStore().ActorStore(ctx), act)
+			if err != nil {
+				return xerrors.Errorf("failed to load miner actor state: %w", err)
+			}
+
+			soci, err := mas.LoadSectors(nil)
+			if err != nil {
+				return xerrors.Errorf("load sectors: %w", err)
+			}
+
+			for _, sector := range soci {
+				_, _ = fmt.Fprintf(
+					cctx.App.Writer,
+					"%s,%d,%d,%d,%d,%d,%s,%s,%s,%s,%s,%d,%x\n",
+					maddr,
+					sector.SectorNumber,
+					sector.SealProof,
+					len(sector.DealIDs),
+					sector.Activation,
+					sector.Expiration,
+					sector.DealWeight,
+					sector.VerifiedDealWeight,
+					sector.InitialPledge,
+					sector.ExpectedDayReward,
+					sector.ExpectedStoragePledge,
+					sector.PowerBaseEpoch,
+					sector.Flags,
+				)
+			}
+
+			count++
+			if count%1000 == 0 {
+				_, _ = fmt.Fprintf(cctx.App.ErrWriter, "Processed %d miners.\n", count)
+			}
+
+			return nil
+		}, false)
+
+		if err != nil {
+			return xerrors.Errorf("iterating over claims: %w", err)
+		}
+
+		_, _ = fmt.Fprintf(cctx.App.ErrWriter, "Processed %d miners. Complete.\n", count)
 
 		return nil
 	},

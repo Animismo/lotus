@@ -15,6 +15,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	apitypes "github.com/filecoin-project/lotus/api/types"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/journal/alerting"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 )
@@ -23,6 +24,8 @@ var session = uuid.New()
 
 type CommonAPI struct {
 	fx.In
+
+	BuildVersion build.BuildVersion
 
 	Alerting     *alerting.Alerting
 	APISecret    *dtypes.APIAlg
@@ -63,10 +66,10 @@ func (a *CommonAPI) Version(context.Context) (api.APIVersion, error) {
 	}
 
 	return api.APIVersion{
-		Version:    build.UserVersion(),
+		Version:    string(a.BuildVersion),
 		APIVersion: v,
 
-		BlockDelay: build.BlockDelaySecs,
+		BlockDelay: buildconstants.BlockDelaySecs,
 	}, nil
 }
 

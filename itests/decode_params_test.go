@@ -1,4 +1,3 @@
-// stm: #integration
 package itests
 
 import (
@@ -16,7 +15,7 @@ import (
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/manifest"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/cli"
 )
@@ -52,7 +51,7 @@ func TestDecodeParams(t *testing.T) {
 	for _, _tc := range testCases {
 		tc := _tc
 		t.Run(tc.ActorKey+" "+tc.MethodNum.String(), func(t *testing.T) {
-			av, err := actorstypes.VersionForNetwork(build.TestNetworkVersion)
+			av, err := actorstypes.VersionForNetwork(buildconstants.TestNetworkVersion)
 			require.NoError(t, err)
 			actorCodeCid, found := actors.GetActorCodeID(av, tc.ActorKey)
 			require.True(t, found)
@@ -103,7 +102,7 @@ func TestDecodeReturn(t *testing.T) {
 	for _, _tc := range testCases {
 		tc := _tc
 		t.Run(tc.ActorKey+" "+tc.MethodNum.String(), func(t *testing.T) {
-			av, err := actorstypes.VersionForNetwork(build.TestNetworkVersion)
+			av, err := actorstypes.VersionForNetwork(buildconstants.TestNetworkVersion)
 			require.NoError(t, err)
 			actorCodeCid, found := actors.GetActorCodeID(av, tc.ActorKey)
 			require.True(t, found)

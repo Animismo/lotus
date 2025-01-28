@@ -9,7 +9,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	actorstypes "github.com/filecoin-project/go-state-types/actors"
 	"github.com/filecoin-project/go-state-types/big"
-	builtin13 "github.com/filecoin-project/go-state-types/builtin"
+	builtin16 "github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/go-state-types/cbor"
 	"github.com/filecoin-project/go-state-types/manifest"
 	builtin0 "github.com/filecoin-project/specs-actors/actors/builtin"
@@ -27,8 +27,8 @@ import (
 )
 
 var (
-	Address = builtin13.StoragePowerActorAddr
-	Methods = builtin13.MethodsPower
+	Address = builtin16.StoragePowerActorAddr
+	Methods = builtin16.MethodsPower
 )
 
 func Load(store adt.Store, act *types.Actor) (State, error) {
@@ -56,6 +56,15 @@ func Load(store adt.Store, act *types.Actor) (State, error) {
 
 		case actorstypes.Version13:
 			return load13(store, act.Head)
+
+		case actorstypes.Version14:
+			return load14(store, act.Head)
+
+		case actorstypes.Version15:
+			return load15(store, act.Head)
+
+		case actorstypes.Version16:
+			return load16(store, act.Head)
 
 		}
 	}
@@ -130,6 +139,15 @@ func MakeState(store adt.Store, av actorstypes.Version) (State, error) {
 	case actorstypes.Version13:
 		return make13(store)
 
+	case actorstypes.Version14:
+		return make14(store)
+
+	case actorstypes.Version15:
+		return make15(store)
+
+	case actorstypes.Version16:
+		return make16(store)
+
 	}
 	return nil, xerrors.Errorf("unknown actor version %d", av)
 }
@@ -150,10 +168,25 @@ type State interface {
 	// MinerCounts returns the number of miners. Participating is the number
 	// with power above the minimum miner threshold.
 	MinerCounts() (participating, total uint64, err error)
+	// RampStartEpoch returns the epoch at which the FIP0081 pledge calculation
+	// change begins. At and before RampStartEpoch, we use the old calculation. At
+	// RampStartEpoch + RampDurationEpochs, we use 70% old rules + 30% new
+	// calculation.
+	//
+	// This method always returns 0 prior to actors version 15.
+	RampStartEpoch() int64
+	// RampDurationEpochs returns the number of epochs over which the new FIP0081
+	// pledge calculation is ramped up.
+	//
+	// This method always returns 0 prior to actors version 15.
+	RampDurationEpochs() uint64
 	MinerPower(address.Address) (Claim, bool, error)
 	MinerNominalPowerMeetsConsensusMinimum(address.Address) (bool, error)
 	ListAllMiners() ([]address.Address, error)
-	ForEachClaim(func(miner address.Address, claim Claim) error) error
+	// ForEachClaim iterates over claims in the power actor.
+	// If onlyEligible is true, it applies the MinerNominalPowerMeetsConsensusMinimum check
+	// before returning the actor.
+	ForEachClaim(cb func(miner address.Address, claim Claim) error, onlyEligible bool) error
 	ClaimsChanged(State) (bool, error)
 
 	// Testing or genesis setup only
@@ -197,5 +230,8 @@ func AllCodes() []cid.Cid {
 		(&state11{}).Code(),
 		(&state12{}).Code(),
 		(&state13{}).Code(),
+		(&state14{}).Code(),
+		(&state15{}).Code(),
+		(&state16{}).Code(),
 	}
 }

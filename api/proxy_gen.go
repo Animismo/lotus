@@ -5,8 +5,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,10 +18,9 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-bitfield"
-	datatransfer "github.com/filecoin-project/go-data-transfer/v2"
-	"github.com/filecoin-project/go-fil-markets/piecestore"
-	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-f3/certs"
+	"github.com/filecoin-project/go-f3/gpbft"
+	"github.com/filecoin-project/go-f3/manifest"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-jsonrpc/auth"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -42,7 +39,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/types/ethtypes"
 	"github.com/filecoin-project/lotus/journal/alerting"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
-	"github.com/filecoin-project/lotus/node/repo/imports"
 	"github.com/filecoin-project/lotus/storage/pipeline/piece"
 	"github.com/filecoin-project/lotus/storage/pipeline/sealiface"
 	"github.com/filecoin-project/lotus/storage/sealer/fsutil"
@@ -96,52 +92,6 @@ type CommonMethods struct {
 }
 
 type CommonStub struct {
-}
-
-type CommonNetStruct struct {
-	CommonStruct
-
-	NetStruct
-
-	Internal CommonNetMethods
-}
-
-type CommonNetMethods struct {
-}
-
-type CommonNetStub struct {
-	CommonStub
-
-	NetStub
-}
-
-type CurioStruct struct {
-	Internal CurioMethods
-}
-
-type CurioMethods struct {
-	AllocatePieceToSector func(p0 context.Context, p1 address.Address, p2 PieceDealInfo, p3 int64, p4 url.URL, p5 http.Header) (SectorOffset, error) `perm:"write"`
-
-	Shutdown func(p0 context.Context) error `perm:"admin"`
-
-	StorageAddLocal func(p0 context.Context, p1 string) error `perm:"admin"`
-
-	StorageDetachLocal func(p0 context.Context, p1 string) error `perm:"admin"`
-
-	StorageFindSector func(p0 context.Context, p1 abi.SectorID, p2 storiface.SectorFileType, p3 abi.SectorSize, p4 bool) ([]storiface.SectorStorageInfo, error) `perm:"admin"`
-
-	StorageInfo func(p0 context.Context, p1 storiface.ID) (storiface.StorageInfo, error) `perm:"admin"`
-
-	StorageList func(p0 context.Context) (map[storiface.ID][]storiface.Decl, error) `perm:"admin"`
-
-	StorageLocal func(p0 context.Context) (map[storiface.ID]string, error) `perm:"admin"`
-
-	StorageStat func(p0 context.Context, p1 storiface.ID) (fsutil.FsStat, error) `perm:"admin"`
-
-	Version func(p0 context.Context) (Version, error) `perm:"admin"`
-}
-
-type CurioStub struct {
 }
 
 type EthSubscriberStruct struct {
@@ -220,61 +170,7 @@ type FullNodeMethods struct {
 
 	ChainTipSetWeight func(p0 context.Context, p1 types.TipSetKey) (types.BigInt, error) `perm:"read"`
 
-	ClientCalcCommP func(p0 context.Context, p1 string) (*CommPRet, error) `perm:"write"`
-
-	ClientCancelDataTransfer func(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error `perm:"write"`
-
-	ClientCancelRetrievalDeal func(p0 context.Context, p1 retrievalmarket.DealID) error `perm:"write"`
-
-	ClientDataTransferUpdates func(p0 context.Context) (<-chan DataTransferChannel, error) `perm:"write"`
-
-	ClientDealPieceCID func(p0 context.Context, p1 cid.Cid) (DataCIDSize, error) `perm:"read"`
-
-	ClientDealSize func(p0 context.Context, p1 cid.Cid) (DataSize, error) `perm:"read"`
-
-	ClientExport func(p0 context.Context, p1 ExportRef, p2 FileRef) error `perm:"admin"`
-
-	ClientFindData func(p0 context.Context, p1 cid.Cid, p2 *cid.Cid) ([]QueryOffer, error) `perm:"read"`
-
-	ClientGenCar func(p0 context.Context, p1 FileRef, p2 string) error `perm:"write"`
-
-	ClientGetDealInfo func(p0 context.Context, p1 cid.Cid) (*DealInfo, error) `perm:"read"`
-
-	ClientGetDealStatus func(p0 context.Context, p1 uint64) (string, error) `perm:"read"`
-
-	ClientGetDealUpdates func(p0 context.Context) (<-chan DealInfo, error) `perm:"write"`
-
-	ClientGetRetrievalUpdates func(p0 context.Context) (<-chan RetrievalInfo, error) `perm:"write"`
-
-	ClientHasLocal func(p0 context.Context, p1 cid.Cid) (bool, error) `perm:"write"`
-
-	ClientImport func(p0 context.Context, p1 FileRef) (*ImportRes, error) `perm:"admin"`
-
-	ClientListDataTransfers func(p0 context.Context) ([]DataTransferChannel, error) `perm:"write"`
-
-	ClientListDeals func(p0 context.Context) ([]DealInfo, error) `perm:"write"`
-
-	ClientListImports func(p0 context.Context) ([]Import, error) `perm:"write"`
-
-	ClientListRetrievals func(p0 context.Context) ([]RetrievalInfo, error) `perm:"write"`
-
-	ClientMinerQueryOffer func(p0 context.Context, p1 address.Address, p2 cid.Cid, p3 *cid.Cid) (QueryOffer, error) `perm:"read"`
-
-	ClientQueryAsk func(p0 context.Context, p1 peer.ID, p2 address.Address) (*StorageAsk, error) `perm:"read"`
-
-	ClientRemoveImport func(p0 context.Context, p1 imports.ID) error `perm:"admin"`
-
-	ClientRestartDataTransfer func(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error `perm:"write"`
-
-	ClientRetrieve func(p0 context.Context, p1 RetrievalOrder) (*RestrievalRes, error) `perm:"admin"`
-
-	ClientRetrieveTryRestartInsufficientFunds func(p0 context.Context, p1 address.Address) error `perm:"write"`
-
-	ClientRetrieveWait func(p0 context.Context, p1 retrievalmarket.DealID) error `perm:"admin"`
-
-	ClientStartDeal func(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) `perm:"admin"`
-
-	ClientStatelessDeal func(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) `perm:"write"`
+	ChainValidateIndex func(p0 context.Context, p1 abi.ChainEpoch, p2 bool) (*types.IndexValidation, error) `perm:"write"`
 
 	CreateBackup func(p0 context.Context, p1 string) error `perm:"admin"`
 
@@ -300,6 +196,10 @@ type FullNodeMethods struct {
 
 	EthGetBlockByNumber func(p0 context.Context, p1 string, p2 bool) (ethtypes.EthBlock, error) `perm:"read"`
 
+	EthGetBlockReceipts func(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) `perm:"read"`
+
+	EthGetBlockReceiptsLimited func(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) `perm:"read"`
+
 	EthGetBlockTransactionCountByHash func(p0 context.Context, p1 ethtypes.EthHash) (ethtypes.EthUint64, error) `perm:"read"`
 
 	EthGetBlockTransactionCountByNumber func(p0 context.Context, p1 ethtypes.EthUint64) (ethtypes.EthUint64, error) `perm:"read"`
@@ -316,9 +216,9 @@ type FullNodeMethods struct {
 
 	EthGetStorageAt func(p0 context.Context, p1 ethtypes.EthAddress, p2 ethtypes.EthBytes, p3 ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error) `perm:"read"`
 
-	EthGetTransactionByBlockHashAndIndex func(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) `perm:"read"`
+	EthGetTransactionByBlockHashAndIndex func(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) `perm:"read"`
 
-	EthGetTransactionByBlockNumberAndIndex func(p0 context.Context, p1 ethtypes.EthUint64, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) `perm:"read"`
+	EthGetTransactionByBlockNumberAndIndex func(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) `perm:"read"`
 
 	EthGetTransactionByHash func(p0 context.Context, p1 *ethtypes.EthHash) (*ethtypes.EthTx, error) `perm:"read"`
 
@@ -344,19 +244,45 @@ type FullNodeMethods struct {
 
 	EthSendRawTransaction func(p0 context.Context, p1 ethtypes.EthBytes) (ethtypes.EthHash, error) `perm:"read"`
 
+	EthSendRawTransactionUntrusted func(p0 context.Context, p1 ethtypes.EthBytes) (ethtypes.EthHash, error) `perm:"read"`
+
 	EthSubscribe func(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthSubscriptionID, error) `perm:"read"`
 
 	EthSyncing func(p0 context.Context) (ethtypes.EthSyncingResult, error) `perm:"read"`
 
 	EthTraceBlock func(p0 context.Context, p1 string) ([]*ethtypes.EthTraceBlock, error) `perm:"read"`
 
+	EthTraceFilter func(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) `perm:"read"`
+
 	EthTraceReplayBlockTransactions func(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) `perm:"read"`
+
+	EthTraceTransaction func(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) `perm:"read"`
 
 	EthUninstallFilter func(p0 context.Context, p1 ethtypes.EthFilterID) (bool, error) `perm:"read"`
 
 	EthUnsubscribe func(p0 context.Context, p1 ethtypes.EthSubscriptionID) (bool, error) `perm:"read"`
 
-	FilecoinAddressToEthAddress func(p0 context.Context, p1 address.Address) (ethtypes.EthAddress, error) `perm:"read"`
+	F3GetCertificate func(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) `perm:"read"`
+
+	F3GetECPowerTable func(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) `perm:"read"`
+
+	F3GetF3PowerTable func(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) `perm:"read"`
+
+	F3GetLatestCertificate func(p0 context.Context) (*certs.FinalityCertificate, error) `perm:"read"`
+
+	F3GetManifest func(p0 context.Context) (*manifest.Manifest, error) `perm:"read"`
+
+	F3GetOrRenewParticipationTicket func(p0 context.Context, p1 address.Address, p2 F3ParticipationTicket, p3 uint64) (F3ParticipationTicket, error) `perm:"sign"`
+
+	F3GetProgress func(p0 context.Context) (gpbft.Instant, error) `perm:"read"`
+
+	F3IsRunning func(p0 context.Context) (bool, error) `perm:"read"`
+
+	F3ListParticipants func(p0 context.Context) ([]F3Participant, error) `perm:"read"`
+
+	F3Participate func(p0 context.Context, p1 F3ParticipationTicket) (F3ParticipationLease, error) `perm:"sign"`
+
+	FilecoinAddressToEthAddress func(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) `perm:"read"`
 
 	GasEstimateFeeCap func(p0 context.Context, p1 *types.Message, p2 int64, p3 types.TipSetKey) (types.BigInt, error) `perm:"read"`
 
@@ -514,23 +440,23 @@ type FullNodeMethods struct {
 
 	StateGetActor func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (*types.Actor, error) `perm:"read"`
 
-	StateGetAllAllocations func(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) `perm:"read"`
+	StateGetAllAllocations func(p0 context.Context, p1 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) `perm:"read"`
 
-	StateGetAllClaims func(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) `perm:"read"`
+	StateGetAllClaims func(p0 context.Context, p1 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) `perm:"read"`
 
-	StateGetAllocation func(p0 context.Context, p1 address.Address, p2 verifregtypes.AllocationId, p3 types.TipSetKey) (*verifregtypes.Allocation, error) `perm:"read"`
+	StateGetAllocation func(p0 context.Context, p1 address.Address, p2 verifreg.AllocationId, p3 types.TipSetKey) (*verifreg.Allocation, error) `perm:"read"`
 
-	StateGetAllocationForPendingDeal func(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifregtypes.Allocation, error) `perm:"read"`
+	StateGetAllocationForPendingDeal func(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifreg.Allocation, error) `perm:"read"`
 
 	StateGetAllocationIdForPendingDeal func(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (verifreg.AllocationId, error) `perm:"read"`
 
-	StateGetAllocations func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) `perm:"read"`
+	StateGetAllocations func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) `perm:"read"`
 
 	StateGetBeaconEntry func(p0 context.Context, p1 abi.ChainEpoch) (*types.BeaconEntry, error) `perm:"read"`
 
-	StateGetClaim func(p0 context.Context, p1 address.Address, p2 verifregtypes.ClaimId, p3 types.TipSetKey) (*verifregtypes.Claim, error) `perm:"read"`
+	StateGetClaim func(p0 context.Context, p1 address.Address, p2 verifreg.ClaimId, p3 types.TipSetKey) (*verifreg.Claim, error) `perm:"read"`
 
-	StateGetClaims func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) `perm:"read"`
+	StateGetClaims func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) `perm:"read"`
 
 	StateGetNetworkParams func(p0 context.Context) (*NetworkParams, error) `perm:"read"`
 
@@ -558,6 +484,8 @@ type FullNodeMethods struct {
 
 	StateMarketParticipants func(p0 context.Context, p1 types.TipSetKey) (map[string]MarketBalance, error) `perm:"read"`
 
+	StateMarketProposalPending func(p0 context.Context, p1 cid.Cid, p2 types.TipSetKey) (bool, error) `perm:"read"`
+
 	StateMarketStorageDeal func(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*MarketDeal, error) `perm:"read"`
 
 	StateMinerActiveSectors func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) ([]*miner.SectorOnChainInfo, error) `perm:"read"`
@@ -573,6 +501,8 @@ type FullNodeMethods struct {
 	StateMinerInfo func(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (MinerInfo, error) `perm:"read"`
 
 	StateMinerInitialPledgeCollateral func(p0 context.Context, p1 address.Address, p2 miner.SectorPreCommitInfo, p3 types.TipSetKey) (types.BigInt, error) `perm:"read"`
+
+	StateMinerInitialPledgeForSector func(p0 context.Context, p1 abi.ChainEpoch, p2 abi.SectorSize, p3 uint64, p4 types.TipSetKey) (types.BigInt, error) `perm:"read"`
 
 	StateMinerPartitions func(p0 context.Context, p1 address.Address, p2 uint64, p3 types.TipSetKey) ([]Partition, error) `perm:"read"`
 
@@ -714,6 +644,8 @@ type GatewayMethods struct {
 
 	EthAccounts func(p0 context.Context) ([]ethtypes.EthAddress, error) ``
 
+	EthAddressToFilecoinAddress func(p0 context.Context, p1 ethtypes.EthAddress) (address.Address, error) ``
+
 	EthBlockNumber func(p0 context.Context) (ethtypes.EthUint64, error) ``
 
 	EthCall func(p0 context.Context, p1 ethtypes.EthCall, p2 ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error) ``
@@ -732,6 +664,10 @@ type GatewayMethods struct {
 
 	EthGetBlockByNumber func(p0 context.Context, p1 string, p2 bool) (ethtypes.EthBlock, error) ``
 
+	EthGetBlockReceipts func(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) ``
+
+	EthGetBlockReceiptsLimited func(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) ``
+
 	EthGetBlockTransactionCountByHash func(p0 context.Context, p1 ethtypes.EthHash) (ethtypes.EthUint64, error) ``
 
 	EthGetBlockTransactionCountByNumber func(p0 context.Context, p1 ethtypes.EthUint64) (ethtypes.EthUint64, error) ``
@@ -747,6 +683,10 @@ type GatewayMethods struct {
 	EthGetMessageCidByTransactionHash func(p0 context.Context, p1 *ethtypes.EthHash) (*cid.Cid, error) ``
 
 	EthGetStorageAt func(p0 context.Context, p1 ethtypes.EthAddress, p2 ethtypes.EthBytes, p3 ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error) ``
+
+	EthGetTransactionByBlockHashAndIndex func(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) ``
+
+	EthGetTransactionByBlockNumberAndIndex func(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) ``
 
 	EthGetTransactionByHash func(p0 context.Context, p1 *ethtypes.EthHash) (*ethtypes.EthTx, error) ``
 
@@ -778,11 +718,21 @@ type GatewayMethods struct {
 
 	EthTraceBlock func(p0 context.Context, p1 string) ([]*ethtypes.EthTraceBlock, error) ``
 
+	EthTraceFilter func(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) ``
+
 	EthTraceReplayBlockTransactions func(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) ``
+
+	EthTraceTransaction func(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) ``
 
 	EthUninstallFilter func(p0 context.Context, p1 ethtypes.EthFilterID) (bool, error) ``
 
 	EthUnsubscribe func(p0 context.Context, p1 ethtypes.EthSubscriptionID) (bool, error) ``
+
+	F3GetCertificate func(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) ``
+
+	F3GetLatestCertificate func(p0 context.Context) (*certs.FinalityCertificate, error) ``
+
+	FilecoinAddressToEthAddress func(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) ``
 
 	GasEstimateGasPremium func(p0 context.Context, p1 uint64, p2 address.Address, p3 int64, p4 types.TipSetKey) (types.BigInt, error) ``
 
@@ -949,8 +899,6 @@ type SignableStub struct {
 type StorageMinerStruct struct {
 	CommonStruct
 
-	NetStruct
-
 	Internal StorageMinerMethods
 }
 
@@ -975,99 +923,9 @@ type StorageMinerMethods struct {
 
 	CreateBackup func(p0 context.Context, p1 string) error `perm:"admin"`
 
-	DagstoreGC func(p0 context.Context) ([]DagstoreShardResult, error) `perm:"admin"`
-
-	DagstoreInitializeAll func(p0 context.Context, p1 DagstoreInitializeAllParams) (<-chan DagstoreInitializeAllEvent, error) `perm:"write"`
-
-	DagstoreInitializeShard func(p0 context.Context, p1 string) error `perm:"write"`
-
-	DagstoreListShards func(p0 context.Context) ([]DagstoreShardInfo, error) `perm:"read"`
-
-	DagstoreLookupPieces func(p0 context.Context, p1 cid.Cid) ([]DagstoreShardInfo, error) `perm:"admin"`
-
-	DagstoreRecoverShard func(p0 context.Context, p1 string) error `perm:"write"`
-
-	DagstoreRegisterShard func(p0 context.Context, p1 string) error `perm:"admin"`
-
-	DealsConsiderOfflineRetrievalDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsConsiderOfflineStorageDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsConsiderOnlineRetrievalDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsConsiderOnlineStorageDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsConsiderUnverifiedStorageDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsConsiderVerifiedStorageDeals func(p0 context.Context) (bool, error) `perm:"admin"`
-
-	DealsImportData func(p0 context.Context, p1 cid.Cid, p2 string) error `perm:"admin"`
-
-	DealsList func(p0 context.Context) ([]*MarketDeal, error) `perm:"admin"`
-
-	DealsPieceCidBlocklist func(p0 context.Context) ([]cid.Cid, error) `perm:"admin"`
-
-	DealsSetConsiderOfflineRetrievalDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetConsiderOfflineStorageDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetConsiderOnlineRetrievalDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetConsiderOnlineStorageDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetConsiderUnverifiedStorageDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetConsiderVerifiedStorageDeals func(p0 context.Context, p1 bool) error `perm:"admin"`
-
-	DealsSetPieceCidBlocklist func(p0 context.Context, p1 []cid.Cid) error `perm:"admin"`
-
-	IndexerAnnounceAllDeals func(p0 context.Context) error `perm:"admin"`
-
-	IndexerAnnounceDeal func(p0 context.Context, p1 cid.Cid) error `perm:"admin"`
-
-	MarketCancelDataTransfer func(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error `perm:"write"`
-
-	MarketDataTransferDiagnostics func(p0 context.Context, p1 peer.ID) (*TransferDiagnostics, error) `perm:"write"`
-
-	MarketDataTransferUpdates func(p0 context.Context) (<-chan DataTransferChannel, error) `perm:"write"`
-
-	MarketGetAsk func(p0 context.Context) (*storagemarket.SignedStorageAsk, error) `perm:"read"`
-
-	MarketGetDealUpdates func(p0 context.Context) (<-chan storagemarket.MinerDeal, error) `perm:"read"`
-
-	MarketGetRetrievalAsk func(p0 context.Context) (*retrievalmarket.Ask, error) `perm:"read"`
-
-	MarketImportDealData func(p0 context.Context, p1 cid.Cid, p2 string) error `perm:"write"`
-
-	MarketListDataTransfers func(p0 context.Context) ([]DataTransferChannel, error) `perm:"write"`
-
 	MarketListDeals func(p0 context.Context) ([]*MarketDeal, error) `perm:"read"`
 
-	MarketListIncompleteDeals func(p0 context.Context) ([]storagemarket.MinerDeal, error) `perm:"read"`
-
-	MarketListRetrievalDeals func(p0 context.Context) ([]struct{}, error) `perm:"read"`
-
-	MarketPendingDeals func(p0 context.Context) (PendingDealInfo, error) `perm:"write"`
-
-	MarketPublishPendingDeals func(p0 context.Context) error `perm:"admin"`
-
-	MarketRestartDataTransfer func(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error `perm:"write"`
-
-	MarketRetryPublishDeal func(p0 context.Context, p1 cid.Cid) error `perm:"admin"`
-
-	MarketSetAsk func(p0 context.Context, p1 types.BigInt, p2 types.BigInt, p3 abi.ChainEpoch, p4 abi.PaddedPieceSize, p5 abi.PaddedPieceSize) error `perm:"admin"`
-
-	MarketSetRetrievalAsk func(p0 context.Context, p1 *retrievalmarket.Ask) error `perm:"admin"`
-
 	MiningBase func(p0 context.Context) (*types.TipSet, error) `perm:"read"`
-
-	PiecesGetCIDInfo func(p0 context.Context, p1 cid.Cid) (*piecestore.CIDInfo, error) `perm:"read"`
-
-	PiecesGetPieceInfo func(p0 context.Context, p1 cid.Cid) (*piecestore.PieceInfo, error) `perm:"read"`
-
-	PiecesListCidInfos func(p0 context.Context) ([]cid.Cid, error) `perm:"read"`
-
-	PiecesListPieces func(p0 context.Context) ([]cid.Cid, error) `perm:"read"`
 
 	PledgeSector func(p0 context.Context) (abi.SectorID, error) `perm:"write"`
 
@@ -1185,7 +1043,7 @@ type StorageMinerMethods struct {
 
 	StorageAuthVerify func(p0 context.Context, p1 string) ([]auth.Permission, error) `perm:"read"`
 
-	StorageBestAlloc func(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType) ([]storiface.StorageInfo, error) `perm:"admin"`
+	StorageBestAlloc func(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType, p4 abi.ActorID) ([]storiface.StorageInfo, error) `perm:"admin"`
 
 	StorageDeclareSector func(p0 context.Context, p1 storiface.ID, p2 abi.SectorID, p3 storiface.SectorFileType, p4 bool) error `perm:"admin"`
 
@@ -1224,8 +1082,6 @@ type StorageMinerMethods struct {
 
 type StorageMinerStub struct {
 	CommonStub
-
-	NetStub
 }
 
 type WalletStruct struct {
@@ -1486,116 +1342,6 @@ func (s *CommonStruct) Version(p0 context.Context) (APIVersion, error) {
 
 func (s *CommonStub) Version(p0 context.Context) (APIVersion, error) {
 	return *new(APIVersion), ErrNotSupported
-}
-
-func (s *CurioStruct) AllocatePieceToSector(p0 context.Context, p1 address.Address, p2 PieceDealInfo, p3 int64, p4 url.URL, p5 http.Header) (SectorOffset, error) {
-	if s.Internal.AllocatePieceToSector == nil {
-		return *new(SectorOffset), ErrNotSupported
-	}
-	return s.Internal.AllocatePieceToSector(p0, p1, p2, p3, p4, p5)
-}
-
-func (s *CurioStub) AllocatePieceToSector(p0 context.Context, p1 address.Address, p2 PieceDealInfo, p3 int64, p4 url.URL, p5 http.Header) (SectorOffset, error) {
-	return *new(SectorOffset), ErrNotSupported
-}
-
-func (s *CurioStruct) Shutdown(p0 context.Context) error {
-	if s.Internal.Shutdown == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.Shutdown(p0)
-}
-
-func (s *CurioStub) Shutdown(p0 context.Context) error {
-	return ErrNotSupported
-}
-
-func (s *CurioStruct) StorageAddLocal(p0 context.Context, p1 string) error {
-	if s.Internal.StorageAddLocal == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.StorageAddLocal(p0, p1)
-}
-
-func (s *CurioStub) StorageAddLocal(p0 context.Context, p1 string) error {
-	return ErrNotSupported
-}
-
-func (s *CurioStruct) StorageDetachLocal(p0 context.Context, p1 string) error {
-	if s.Internal.StorageDetachLocal == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.StorageDetachLocal(p0, p1)
-}
-
-func (s *CurioStub) StorageDetachLocal(p0 context.Context, p1 string) error {
-	return ErrNotSupported
-}
-
-func (s *CurioStruct) StorageFindSector(p0 context.Context, p1 abi.SectorID, p2 storiface.SectorFileType, p3 abi.SectorSize, p4 bool) ([]storiface.SectorStorageInfo, error) {
-	if s.Internal.StorageFindSector == nil {
-		return *new([]storiface.SectorStorageInfo), ErrNotSupported
-	}
-	return s.Internal.StorageFindSector(p0, p1, p2, p3, p4)
-}
-
-func (s *CurioStub) StorageFindSector(p0 context.Context, p1 abi.SectorID, p2 storiface.SectorFileType, p3 abi.SectorSize, p4 bool) ([]storiface.SectorStorageInfo, error) {
-	return *new([]storiface.SectorStorageInfo), ErrNotSupported
-}
-
-func (s *CurioStruct) StorageInfo(p0 context.Context, p1 storiface.ID) (storiface.StorageInfo, error) {
-	if s.Internal.StorageInfo == nil {
-		return *new(storiface.StorageInfo), ErrNotSupported
-	}
-	return s.Internal.StorageInfo(p0, p1)
-}
-
-func (s *CurioStub) StorageInfo(p0 context.Context, p1 storiface.ID) (storiface.StorageInfo, error) {
-	return *new(storiface.StorageInfo), ErrNotSupported
-}
-
-func (s *CurioStruct) StorageList(p0 context.Context) (map[storiface.ID][]storiface.Decl, error) {
-	if s.Internal.StorageList == nil {
-		return *new(map[storiface.ID][]storiface.Decl), ErrNotSupported
-	}
-	return s.Internal.StorageList(p0)
-}
-
-func (s *CurioStub) StorageList(p0 context.Context) (map[storiface.ID][]storiface.Decl, error) {
-	return *new(map[storiface.ID][]storiface.Decl), ErrNotSupported
-}
-
-func (s *CurioStruct) StorageLocal(p0 context.Context) (map[storiface.ID]string, error) {
-	if s.Internal.StorageLocal == nil {
-		return *new(map[storiface.ID]string), ErrNotSupported
-	}
-	return s.Internal.StorageLocal(p0)
-}
-
-func (s *CurioStub) StorageLocal(p0 context.Context) (map[storiface.ID]string, error) {
-	return *new(map[storiface.ID]string), ErrNotSupported
-}
-
-func (s *CurioStruct) StorageStat(p0 context.Context, p1 storiface.ID) (fsutil.FsStat, error) {
-	if s.Internal.StorageStat == nil {
-		return *new(fsutil.FsStat), ErrNotSupported
-	}
-	return s.Internal.StorageStat(p0, p1)
-}
-
-func (s *CurioStub) StorageStat(p0 context.Context, p1 storiface.ID) (fsutil.FsStat, error) {
-	return *new(fsutil.FsStat), ErrNotSupported
-}
-
-func (s *CurioStruct) Version(p0 context.Context) (Version, error) {
-	if s.Internal.Version == nil {
-		return *new(Version), ErrNotSupported
-	}
-	return s.Internal.Version(p0)
-}
-
-func (s *CurioStub) Version(p0 context.Context) (Version, error) {
-	return *new(Version), ErrNotSupported
 }
 
 func (s *EthSubscriberStruct) EthSubscription(p0 context.Context, p1 jsonrpc.RawParams) error {
@@ -1917,311 +1663,14 @@ func (s *FullNodeStub) ChainTipSetWeight(p0 context.Context, p1 types.TipSetKey)
 	return *new(types.BigInt), ErrNotSupported
 }
 
-func (s *FullNodeStruct) ClientCalcCommP(p0 context.Context, p1 string) (*CommPRet, error) {
-	if s.Internal.ClientCalcCommP == nil {
+func (s *FullNodeStruct) ChainValidateIndex(p0 context.Context, p1 abi.ChainEpoch, p2 bool) (*types.IndexValidation, error) {
+	if s.Internal.ChainValidateIndex == nil {
 		return nil, ErrNotSupported
 	}
-	return s.Internal.ClientCalcCommP(p0, p1)
+	return s.Internal.ChainValidateIndex(p0, p1, p2)
 }
 
-func (s *FullNodeStub) ClientCalcCommP(p0 context.Context, p1 string) (*CommPRet, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientCancelDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	if s.Internal.ClientCancelDataTransfer == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientCancelDataTransfer(p0, p1, p2, p3)
-}
-
-func (s *FullNodeStub) ClientCancelDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientCancelRetrievalDeal(p0 context.Context, p1 retrievalmarket.DealID) error {
-	if s.Internal.ClientCancelRetrievalDeal == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientCancelRetrievalDeal(p0, p1)
-}
-
-func (s *FullNodeStub) ClientCancelRetrievalDeal(p0 context.Context, p1 retrievalmarket.DealID) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientDataTransferUpdates(p0 context.Context) (<-chan DataTransferChannel, error) {
-	if s.Internal.ClientDataTransferUpdates == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientDataTransferUpdates(p0)
-}
-
-func (s *FullNodeStub) ClientDataTransferUpdates(p0 context.Context) (<-chan DataTransferChannel, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientDealPieceCID(p0 context.Context, p1 cid.Cid) (DataCIDSize, error) {
-	if s.Internal.ClientDealPieceCID == nil {
-		return *new(DataCIDSize), ErrNotSupported
-	}
-	return s.Internal.ClientDealPieceCID(p0, p1)
-}
-
-func (s *FullNodeStub) ClientDealPieceCID(p0 context.Context, p1 cid.Cid) (DataCIDSize, error) {
-	return *new(DataCIDSize), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientDealSize(p0 context.Context, p1 cid.Cid) (DataSize, error) {
-	if s.Internal.ClientDealSize == nil {
-		return *new(DataSize), ErrNotSupported
-	}
-	return s.Internal.ClientDealSize(p0, p1)
-}
-
-func (s *FullNodeStub) ClientDealSize(p0 context.Context, p1 cid.Cid) (DataSize, error) {
-	return *new(DataSize), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientExport(p0 context.Context, p1 ExportRef, p2 FileRef) error {
-	if s.Internal.ClientExport == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientExport(p0, p1, p2)
-}
-
-func (s *FullNodeStub) ClientExport(p0 context.Context, p1 ExportRef, p2 FileRef) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientFindData(p0 context.Context, p1 cid.Cid, p2 *cid.Cid) ([]QueryOffer, error) {
-	if s.Internal.ClientFindData == nil {
-		return *new([]QueryOffer), ErrNotSupported
-	}
-	return s.Internal.ClientFindData(p0, p1, p2)
-}
-
-func (s *FullNodeStub) ClientFindData(p0 context.Context, p1 cid.Cid, p2 *cid.Cid) ([]QueryOffer, error) {
-	return *new([]QueryOffer), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientGenCar(p0 context.Context, p1 FileRef, p2 string) error {
-	if s.Internal.ClientGenCar == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientGenCar(p0, p1, p2)
-}
-
-func (s *FullNodeStub) ClientGenCar(p0 context.Context, p1 FileRef, p2 string) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientGetDealInfo(p0 context.Context, p1 cid.Cid) (*DealInfo, error) {
-	if s.Internal.ClientGetDealInfo == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientGetDealInfo(p0, p1)
-}
-
-func (s *FullNodeStub) ClientGetDealInfo(p0 context.Context, p1 cid.Cid) (*DealInfo, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientGetDealStatus(p0 context.Context, p1 uint64) (string, error) {
-	if s.Internal.ClientGetDealStatus == nil {
-		return "", ErrNotSupported
-	}
-	return s.Internal.ClientGetDealStatus(p0, p1)
-}
-
-func (s *FullNodeStub) ClientGetDealStatus(p0 context.Context, p1 uint64) (string, error) {
-	return "", ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientGetDealUpdates(p0 context.Context) (<-chan DealInfo, error) {
-	if s.Internal.ClientGetDealUpdates == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientGetDealUpdates(p0)
-}
-
-func (s *FullNodeStub) ClientGetDealUpdates(p0 context.Context) (<-chan DealInfo, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientGetRetrievalUpdates(p0 context.Context) (<-chan RetrievalInfo, error) {
-	if s.Internal.ClientGetRetrievalUpdates == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientGetRetrievalUpdates(p0)
-}
-
-func (s *FullNodeStub) ClientGetRetrievalUpdates(p0 context.Context) (<-chan RetrievalInfo, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientHasLocal(p0 context.Context, p1 cid.Cid) (bool, error) {
-	if s.Internal.ClientHasLocal == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.ClientHasLocal(p0, p1)
-}
-
-func (s *FullNodeStub) ClientHasLocal(p0 context.Context, p1 cid.Cid) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientImport(p0 context.Context, p1 FileRef) (*ImportRes, error) {
-	if s.Internal.ClientImport == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientImport(p0, p1)
-}
-
-func (s *FullNodeStub) ClientImport(p0 context.Context, p1 FileRef) (*ImportRes, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientListDataTransfers(p0 context.Context) ([]DataTransferChannel, error) {
-	if s.Internal.ClientListDataTransfers == nil {
-		return *new([]DataTransferChannel), ErrNotSupported
-	}
-	return s.Internal.ClientListDataTransfers(p0)
-}
-
-func (s *FullNodeStub) ClientListDataTransfers(p0 context.Context) ([]DataTransferChannel, error) {
-	return *new([]DataTransferChannel), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientListDeals(p0 context.Context) ([]DealInfo, error) {
-	if s.Internal.ClientListDeals == nil {
-		return *new([]DealInfo), ErrNotSupported
-	}
-	return s.Internal.ClientListDeals(p0)
-}
-
-func (s *FullNodeStub) ClientListDeals(p0 context.Context) ([]DealInfo, error) {
-	return *new([]DealInfo), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientListImports(p0 context.Context) ([]Import, error) {
-	if s.Internal.ClientListImports == nil {
-		return *new([]Import), ErrNotSupported
-	}
-	return s.Internal.ClientListImports(p0)
-}
-
-func (s *FullNodeStub) ClientListImports(p0 context.Context) ([]Import, error) {
-	return *new([]Import), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientListRetrievals(p0 context.Context) ([]RetrievalInfo, error) {
-	if s.Internal.ClientListRetrievals == nil {
-		return *new([]RetrievalInfo), ErrNotSupported
-	}
-	return s.Internal.ClientListRetrievals(p0)
-}
-
-func (s *FullNodeStub) ClientListRetrievals(p0 context.Context) ([]RetrievalInfo, error) {
-	return *new([]RetrievalInfo), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientMinerQueryOffer(p0 context.Context, p1 address.Address, p2 cid.Cid, p3 *cid.Cid) (QueryOffer, error) {
-	if s.Internal.ClientMinerQueryOffer == nil {
-		return *new(QueryOffer), ErrNotSupported
-	}
-	return s.Internal.ClientMinerQueryOffer(p0, p1, p2, p3)
-}
-
-func (s *FullNodeStub) ClientMinerQueryOffer(p0 context.Context, p1 address.Address, p2 cid.Cid, p3 *cid.Cid) (QueryOffer, error) {
-	return *new(QueryOffer), ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientQueryAsk(p0 context.Context, p1 peer.ID, p2 address.Address) (*StorageAsk, error) {
-	if s.Internal.ClientQueryAsk == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientQueryAsk(p0, p1, p2)
-}
-
-func (s *FullNodeStub) ClientQueryAsk(p0 context.Context, p1 peer.ID, p2 address.Address) (*StorageAsk, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientRemoveImport(p0 context.Context, p1 imports.ID) error {
-	if s.Internal.ClientRemoveImport == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientRemoveImport(p0, p1)
-}
-
-func (s *FullNodeStub) ClientRemoveImport(p0 context.Context, p1 imports.ID) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientRestartDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	if s.Internal.ClientRestartDataTransfer == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientRestartDataTransfer(p0, p1, p2, p3)
-}
-
-func (s *FullNodeStub) ClientRestartDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientRetrieve(p0 context.Context, p1 RetrievalOrder) (*RestrievalRes, error) {
-	if s.Internal.ClientRetrieve == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientRetrieve(p0, p1)
-}
-
-func (s *FullNodeStub) ClientRetrieve(p0 context.Context, p1 RetrievalOrder) (*RestrievalRes, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientRetrieveTryRestartInsufficientFunds(p0 context.Context, p1 address.Address) error {
-	if s.Internal.ClientRetrieveTryRestartInsufficientFunds == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientRetrieveTryRestartInsufficientFunds(p0, p1)
-}
-
-func (s *FullNodeStub) ClientRetrieveTryRestartInsufficientFunds(p0 context.Context, p1 address.Address) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientRetrieveWait(p0 context.Context, p1 retrievalmarket.DealID) error {
-	if s.Internal.ClientRetrieveWait == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.ClientRetrieveWait(p0, p1)
-}
-
-func (s *FullNodeStub) ClientRetrieveWait(p0 context.Context, p1 retrievalmarket.DealID) error {
-	return ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientStartDeal(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) {
-	if s.Internal.ClientStartDeal == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientStartDeal(p0, p1)
-}
-
-func (s *FullNodeStub) ClientStartDeal(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *FullNodeStruct) ClientStatelessDeal(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) {
-	if s.Internal.ClientStatelessDeal == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.ClientStatelessDeal(p0, p1)
-}
-
-func (s *FullNodeStub) ClientStatelessDeal(p0 context.Context, p1 *StartDealParams) (*cid.Cid, error) {
+func (s *FullNodeStub) ChainValidateIndex(p0 context.Context, p1 abi.ChainEpoch, p2 bool) (*types.IndexValidation, error) {
 	return nil, ErrNotSupported
 }
 
@@ -2357,6 +1806,28 @@ func (s *FullNodeStub) EthGetBlockByNumber(p0 context.Context, p1 string, p2 boo
 	return *new(ethtypes.EthBlock), ErrNotSupported
 }
 
+func (s *FullNodeStruct) EthGetBlockReceipts(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) {
+	if s.Internal.EthGetBlockReceipts == nil {
+		return *new([]*EthTxReceipt), ErrNotSupported
+	}
+	return s.Internal.EthGetBlockReceipts(p0, p1)
+}
+
+func (s *FullNodeStub) EthGetBlockReceipts(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) {
+	return *new([]*EthTxReceipt), ErrNotSupported
+}
+
+func (s *FullNodeStruct) EthGetBlockReceiptsLimited(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) {
+	if s.Internal.EthGetBlockReceiptsLimited == nil {
+		return *new([]*EthTxReceipt), ErrNotSupported
+	}
+	return s.Internal.EthGetBlockReceiptsLimited(p0, p1, p2)
+}
+
+func (s *FullNodeStub) EthGetBlockReceiptsLimited(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) {
+	return *new([]*EthTxReceipt), ErrNotSupported
+}
+
 func (s *FullNodeStruct) EthGetBlockTransactionCountByHash(p0 context.Context, p1 ethtypes.EthHash) (ethtypes.EthUint64, error) {
 	if s.Internal.EthGetBlockTransactionCountByHash == nil {
 		return *new(ethtypes.EthUint64), ErrNotSupported
@@ -2445,26 +1916,26 @@ func (s *FullNodeStub) EthGetStorageAt(p0 context.Context, p1 ethtypes.EthAddres
 	return *new(ethtypes.EthBytes), ErrNotSupported
 }
 
-func (s *FullNodeStruct) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) {
+func (s *FullNodeStruct) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
 	if s.Internal.EthGetTransactionByBlockHashAndIndex == nil {
-		return *new(ethtypes.EthTx), ErrNotSupported
+		return nil, ErrNotSupported
 	}
 	return s.Internal.EthGetTransactionByBlockHashAndIndex(p0, p1, p2)
 }
 
-func (s *FullNodeStub) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) {
-	return *new(ethtypes.EthTx), ErrNotSupported
+func (s *FullNodeStub) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	return nil, ErrNotSupported
 }
 
-func (s *FullNodeStruct) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 ethtypes.EthUint64, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) {
+func (s *FullNodeStruct) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
 	if s.Internal.EthGetTransactionByBlockNumberAndIndex == nil {
-		return *new(ethtypes.EthTx), ErrNotSupported
+		return nil, ErrNotSupported
 	}
 	return s.Internal.EthGetTransactionByBlockNumberAndIndex(p0, p1, p2)
 }
 
-func (s *FullNodeStub) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 ethtypes.EthUint64, p2 ethtypes.EthUint64) (ethtypes.EthTx, error) {
-	return *new(ethtypes.EthTx), ErrNotSupported
+func (s *FullNodeStub) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	return nil, ErrNotSupported
 }
 
 func (s *FullNodeStruct) EthGetTransactionByHash(p0 context.Context, p1 *ethtypes.EthHash) (*ethtypes.EthTx, error) {
@@ -2599,6 +2070,17 @@ func (s *FullNodeStub) EthSendRawTransaction(p0 context.Context, p1 ethtypes.Eth
 	return *new(ethtypes.EthHash), ErrNotSupported
 }
 
+func (s *FullNodeStruct) EthSendRawTransactionUntrusted(p0 context.Context, p1 ethtypes.EthBytes) (ethtypes.EthHash, error) {
+	if s.Internal.EthSendRawTransactionUntrusted == nil {
+		return *new(ethtypes.EthHash), ErrNotSupported
+	}
+	return s.Internal.EthSendRawTransactionUntrusted(p0, p1)
+}
+
+func (s *FullNodeStub) EthSendRawTransactionUntrusted(p0 context.Context, p1 ethtypes.EthBytes) (ethtypes.EthHash, error) {
+	return *new(ethtypes.EthHash), ErrNotSupported
+}
+
 func (s *FullNodeStruct) EthSubscribe(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthSubscriptionID, error) {
 	if s.Internal.EthSubscribe == nil {
 		return *new(ethtypes.EthSubscriptionID), ErrNotSupported
@@ -2632,6 +2114,17 @@ func (s *FullNodeStub) EthTraceBlock(p0 context.Context, p1 string) ([]*ethtypes
 	return *new([]*ethtypes.EthTraceBlock), ErrNotSupported
 }
 
+func (s *FullNodeStruct) EthTraceFilter(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) {
+	if s.Internal.EthTraceFilter == nil {
+		return *new([]*ethtypes.EthTraceFilterResult), ErrNotSupported
+	}
+	return s.Internal.EthTraceFilter(p0, p1)
+}
+
+func (s *FullNodeStub) EthTraceFilter(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) {
+	return *new([]*ethtypes.EthTraceFilterResult), ErrNotSupported
+}
+
 func (s *FullNodeStruct) EthTraceReplayBlockTransactions(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) {
 	if s.Internal.EthTraceReplayBlockTransactions == nil {
 		return *new([]*ethtypes.EthTraceReplayBlockTransaction), ErrNotSupported
@@ -2641,6 +2134,17 @@ func (s *FullNodeStruct) EthTraceReplayBlockTransactions(p0 context.Context, p1 
 
 func (s *FullNodeStub) EthTraceReplayBlockTransactions(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) {
 	return *new([]*ethtypes.EthTraceReplayBlockTransaction), ErrNotSupported
+}
+
+func (s *FullNodeStruct) EthTraceTransaction(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) {
+	if s.Internal.EthTraceTransaction == nil {
+		return *new([]*ethtypes.EthTraceTransaction), ErrNotSupported
+	}
+	return s.Internal.EthTraceTransaction(p0, p1)
+}
+
+func (s *FullNodeStub) EthTraceTransaction(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) {
+	return *new([]*ethtypes.EthTraceTransaction), ErrNotSupported
 }
 
 func (s *FullNodeStruct) EthUninstallFilter(p0 context.Context, p1 ethtypes.EthFilterID) (bool, error) {
@@ -2665,14 +2169,124 @@ func (s *FullNodeStub) EthUnsubscribe(p0 context.Context, p1 ethtypes.EthSubscri
 	return false, ErrNotSupported
 }
 
-func (s *FullNodeStruct) FilecoinAddressToEthAddress(p0 context.Context, p1 address.Address) (ethtypes.EthAddress, error) {
+func (s *FullNodeStruct) F3GetCertificate(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) {
+	if s.Internal.F3GetCertificate == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.F3GetCertificate(p0, p1)
+}
+
+func (s *FullNodeStub) F3GetCertificate(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetECPowerTable(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) {
+	if s.Internal.F3GetECPowerTable == nil {
+		return *new(gpbft.PowerEntries), ErrNotSupported
+	}
+	return s.Internal.F3GetECPowerTable(p0, p1)
+}
+
+func (s *FullNodeStub) F3GetECPowerTable(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) {
+	return *new(gpbft.PowerEntries), ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetF3PowerTable(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) {
+	if s.Internal.F3GetF3PowerTable == nil {
+		return *new(gpbft.PowerEntries), ErrNotSupported
+	}
+	return s.Internal.F3GetF3PowerTable(p0, p1)
+}
+
+func (s *FullNodeStub) F3GetF3PowerTable(p0 context.Context, p1 types.TipSetKey) (gpbft.PowerEntries, error) {
+	return *new(gpbft.PowerEntries), ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetLatestCertificate(p0 context.Context) (*certs.FinalityCertificate, error) {
+	if s.Internal.F3GetLatestCertificate == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.F3GetLatestCertificate(p0)
+}
+
+func (s *FullNodeStub) F3GetLatestCertificate(p0 context.Context) (*certs.FinalityCertificate, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetManifest(p0 context.Context) (*manifest.Manifest, error) {
+	if s.Internal.F3GetManifest == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.F3GetManifest(p0)
+}
+
+func (s *FullNodeStub) F3GetManifest(p0 context.Context) (*manifest.Manifest, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetOrRenewParticipationTicket(p0 context.Context, p1 address.Address, p2 F3ParticipationTicket, p3 uint64) (F3ParticipationTicket, error) {
+	if s.Internal.F3GetOrRenewParticipationTicket == nil {
+		return *new(F3ParticipationTicket), ErrNotSupported
+	}
+	return s.Internal.F3GetOrRenewParticipationTicket(p0, p1, p2, p3)
+}
+
+func (s *FullNodeStub) F3GetOrRenewParticipationTicket(p0 context.Context, p1 address.Address, p2 F3ParticipationTicket, p3 uint64) (F3ParticipationTicket, error) {
+	return *new(F3ParticipationTicket), ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3GetProgress(p0 context.Context) (gpbft.Instant, error) {
+	if s.Internal.F3GetProgress == nil {
+		return *new(gpbft.Instant), ErrNotSupported
+	}
+	return s.Internal.F3GetProgress(p0)
+}
+
+func (s *FullNodeStub) F3GetProgress(p0 context.Context) (gpbft.Instant, error) {
+	return *new(gpbft.Instant), ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3IsRunning(p0 context.Context) (bool, error) {
+	if s.Internal.F3IsRunning == nil {
+		return false, ErrNotSupported
+	}
+	return s.Internal.F3IsRunning(p0)
+}
+
+func (s *FullNodeStub) F3IsRunning(p0 context.Context) (bool, error) {
+	return false, ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3ListParticipants(p0 context.Context) ([]F3Participant, error) {
+	if s.Internal.F3ListParticipants == nil {
+		return *new([]F3Participant), ErrNotSupported
+	}
+	return s.Internal.F3ListParticipants(p0)
+}
+
+func (s *FullNodeStub) F3ListParticipants(p0 context.Context) ([]F3Participant, error) {
+	return *new([]F3Participant), ErrNotSupported
+}
+
+func (s *FullNodeStruct) F3Participate(p0 context.Context, p1 F3ParticipationTicket) (F3ParticipationLease, error) {
+	if s.Internal.F3Participate == nil {
+		return *new(F3ParticipationLease), ErrNotSupported
+	}
+	return s.Internal.F3Participate(p0, p1)
+}
+
+func (s *FullNodeStub) F3Participate(p0 context.Context, p1 F3ParticipationTicket) (F3ParticipationLease, error) {
+	return *new(F3ParticipationLease), ErrNotSupported
+}
+
+func (s *FullNodeStruct) FilecoinAddressToEthAddress(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) {
 	if s.Internal.FilecoinAddressToEthAddress == nil {
 		return *new(ethtypes.EthAddress), ErrNotSupported
 	}
 	return s.Internal.FilecoinAddressToEthAddress(p0, p1)
 }
 
-func (s *FullNodeStub) FilecoinAddressToEthAddress(p0 context.Context, p1 address.Address) (ethtypes.EthAddress, error) {
+func (s *FullNodeStub) FilecoinAddressToEthAddress(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) {
 	return *new(ethtypes.EthAddress), ErrNotSupported
 }
 
@@ -3534,47 +3148,47 @@ func (s *FullNodeStub) StateGetActor(p0 context.Context, p1 address.Address, p2 
 	return nil, ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetAllAllocations(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) {
+func (s *FullNodeStruct) StateGetAllAllocations(p0 context.Context, p1 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) {
 	if s.Internal.StateGetAllAllocations == nil {
-		return *new(map[verifregtypes.AllocationId]verifregtypes.Allocation), ErrNotSupported
+		return *new(map[verifreg.AllocationId]verifreg.Allocation), ErrNotSupported
 	}
 	return s.Internal.StateGetAllAllocations(p0, p1)
 }
 
-func (s *FullNodeStub) StateGetAllAllocations(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) {
-	return *new(map[verifregtypes.AllocationId]verifregtypes.Allocation), ErrNotSupported
+func (s *FullNodeStub) StateGetAllAllocations(p0 context.Context, p1 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) {
+	return *new(map[verifreg.AllocationId]verifreg.Allocation), ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetAllClaims(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) {
+func (s *FullNodeStruct) StateGetAllClaims(p0 context.Context, p1 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) {
 	if s.Internal.StateGetAllClaims == nil {
-		return *new(map[verifregtypes.ClaimId]verifregtypes.Claim), ErrNotSupported
+		return *new(map[verifreg.ClaimId]verifreg.Claim), ErrNotSupported
 	}
 	return s.Internal.StateGetAllClaims(p0, p1)
 }
 
-func (s *FullNodeStub) StateGetAllClaims(p0 context.Context, p1 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) {
-	return *new(map[verifregtypes.ClaimId]verifregtypes.Claim), ErrNotSupported
+func (s *FullNodeStub) StateGetAllClaims(p0 context.Context, p1 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) {
+	return *new(map[verifreg.ClaimId]verifreg.Claim), ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetAllocation(p0 context.Context, p1 address.Address, p2 verifregtypes.AllocationId, p3 types.TipSetKey) (*verifregtypes.Allocation, error) {
+func (s *FullNodeStruct) StateGetAllocation(p0 context.Context, p1 address.Address, p2 verifreg.AllocationId, p3 types.TipSetKey) (*verifreg.Allocation, error) {
 	if s.Internal.StateGetAllocation == nil {
 		return nil, ErrNotSupported
 	}
 	return s.Internal.StateGetAllocation(p0, p1, p2, p3)
 }
 
-func (s *FullNodeStub) StateGetAllocation(p0 context.Context, p1 address.Address, p2 verifregtypes.AllocationId, p3 types.TipSetKey) (*verifregtypes.Allocation, error) {
+func (s *FullNodeStub) StateGetAllocation(p0 context.Context, p1 address.Address, p2 verifreg.AllocationId, p3 types.TipSetKey) (*verifreg.Allocation, error) {
 	return nil, ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetAllocationForPendingDeal(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifregtypes.Allocation, error) {
+func (s *FullNodeStruct) StateGetAllocationForPendingDeal(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifreg.Allocation, error) {
 	if s.Internal.StateGetAllocationForPendingDeal == nil {
 		return nil, ErrNotSupported
 	}
 	return s.Internal.StateGetAllocationForPendingDeal(p0, p1, p2)
 }
 
-func (s *FullNodeStub) StateGetAllocationForPendingDeal(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifregtypes.Allocation, error) {
+func (s *FullNodeStub) StateGetAllocationForPendingDeal(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*verifreg.Allocation, error) {
 	return nil, ErrNotSupported
 }
 
@@ -3589,15 +3203,15 @@ func (s *FullNodeStub) StateGetAllocationIdForPendingDeal(p0 context.Context, p1
 	return *new(verifreg.AllocationId), ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetAllocations(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) {
+func (s *FullNodeStruct) StateGetAllocations(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) {
 	if s.Internal.StateGetAllocations == nil {
-		return *new(map[verifregtypes.AllocationId]verifregtypes.Allocation), ErrNotSupported
+		return *new(map[verifreg.AllocationId]verifreg.Allocation), ErrNotSupported
 	}
 	return s.Internal.StateGetAllocations(p0, p1, p2)
 }
 
-func (s *FullNodeStub) StateGetAllocations(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.AllocationId]verifregtypes.Allocation, error) {
-	return *new(map[verifregtypes.AllocationId]verifregtypes.Allocation), ErrNotSupported
+func (s *FullNodeStub) StateGetAllocations(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.AllocationId]verifreg.Allocation, error) {
+	return *new(map[verifreg.AllocationId]verifreg.Allocation), ErrNotSupported
 }
 
 func (s *FullNodeStruct) StateGetBeaconEntry(p0 context.Context, p1 abi.ChainEpoch) (*types.BeaconEntry, error) {
@@ -3611,26 +3225,26 @@ func (s *FullNodeStub) StateGetBeaconEntry(p0 context.Context, p1 abi.ChainEpoch
 	return nil, ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetClaim(p0 context.Context, p1 address.Address, p2 verifregtypes.ClaimId, p3 types.TipSetKey) (*verifregtypes.Claim, error) {
+func (s *FullNodeStruct) StateGetClaim(p0 context.Context, p1 address.Address, p2 verifreg.ClaimId, p3 types.TipSetKey) (*verifreg.Claim, error) {
 	if s.Internal.StateGetClaim == nil {
 		return nil, ErrNotSupported
 	}
 	return s.Internal.StateGetClaim(p0, p1, p2, p3)
 }
 
-func (s *FullNodeStub) StateGetClaim(p0 context.Context, p1 address.Address, p2 verifregtypes.ClaimId, p3 types.TipSetKey) (*verifregtypes.Claim, error) {
+func (s *FullNodeStub) StateGetClaim(p0 context.Context, p1 address.Address, p2 verifreg.ClaimId, p3 types.TipSetKey) (*verifreg.Claim, error) {
 	return nil, ErrNotSupported
 }
 
-func (s *FullNodeStruct) StateGetClaims(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) {
+func (s *FullNodeStruct) StateGetClaims(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) {
 	if s.Internal.StateGetClaims == nil {
-		return *new(map[verifregtypes.ClaimId]verifregtypes.Claim), ErrNotSupported
+		return *new(map[verifreg.ClaimId]verifreg.Claim), ErrNotSupported
 	}
 	return s.Internal.StateGetClaims(p0, p1, p2)
 }
 
-func (s *FullNodeStub) StateGetClaims(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifregtypes.ClaimId]verifregtypes.Claim, error) {
-	return *new(map[verifregtypes.ClaimId]verifregtypes.Claim), ErrNotSupported
+func (s *FullNodeStub) StateGetClaims(p0 context.Context, p1 address.Address, p2 types.TipSetKey) (map[verifreg.ClaimId]verifreg.Claim, error) {
+	return *new(map[verifreg.ClaimId]verifreg.Claim), ErrNotSupported
 }
 
 func (s *FullNodeStruct) StateGetNetworkParams(p0 context.Context) (*NetworkParams, error) {
@@ -3776,6 +3390,17 @@ func (s *FullNodeStub) StateMarketParticipants(p0 context.Context, p1 types.TipS
 	return *new(map[string]MarketBalance), ErrNotSupported
 }
 
+func (s *FullNodeStruct) StateMarketProposalPending(p0 context.Context, p1 cid.Cid, p2 types.TipSetKey) (bool, error) {
+	if s.Internal.StateMarketProposalPending == nil {
+		return false, ErrNotSupported
+	}
+	return s.Internal.StateMarketProposalPending(p0, p1, p2)
+}
+
+func (s *FullNodeStub) StateMarketProposalPending(p0 context.Context, p1 cid.Cid, p2 types.TipSetKey) (bool, error) {
+	return false, ErrNotSupported
+}
+
 func (s *FullNodeStruct) StateMarketStorageDeal(p0 context.Context, p1 abi.DealID, p2 types.TipSetKey) (*MarketDeal, error) {
 	if s.Internal.StateMarketStorageDeal == nil {
 		return nil, ErrNotSupported
@@ -3861,6 +3486,17 @@ func (s *FullNodeStruct) StateMinerInitialPledgeCollateral(p0 context.Context, p
 }
 
 func (s *FullNodeStub) StateMinerInitialPledgeCollateral(p0 context.Context, p1 address.Address, p2 miner.SectorPreCommitInfo, p3 types.TipSetKey) (types.BigInt, error) {
+	return *new(types.BigInt), ErrNotSupported
+}
+
+func (s *FullNodeStruct) StateMinerInitialPledgeForSector(p0 context.Context, p1 abi.ChainEpoch, p2 abi.SectorSize, p3 uint64, p4 types.TipSetKey) (types.BigInt, error) {
+	if s.Internal.StateMinerInitialPledgeForSector == nil {
+		return *new(types.BigInt), ErrNotSupported
+	}
+	return s.Internal.StateMinerInitialPledgeForSector(p0, p1, p2, p3, p4)
+}
+
+func (s *FullNodeStub) StateMinerInitialPledgeForSector(p0 context.Context, p1 abi.ChainEpoch, p2 abi.SectorSize, p3 uint64, p4 types.TipSetKey) (types.BigInt, error) {
 	return *new(types.BigInt), ErrNotSupported
 }
 
@@ -4568,6 +4204,17 @@ func (s *GatewayStub) EthAccounts(p0 context.Context) ([]ethtypes.EthAddress, er
 	return *new([]ethtypes.EthAddress), ErrNotSupported
 }
 
+func (s *GatewayStruct) EthAddressToFilecoinAddress(p0 context.Context, p1 ethtypes.EthAddress) (address.Address, error) {
+	if s.Internal.EthAddressToFilecoinAddress == nil {
+		return *new(address.Address), ErrNotSupported
+	}
+	return s.Internal.EthAddressToFilecoinAddress(p0, p1)
+}
+
+func (s *GatewayStub) EthAddressToFilecoinAddress(p0 context.Context, p1 ethtypes.EthAddress) (address.Address, error) {
+	return *new(address.Address), ErrNotSupported
+}
+
 func (s *GatewayStruct) EthBlockNumber(p0 context.Context) (ethtypes.EthUint64, error) {
 	if s.Internal.EthBlockNumber == nil {
 		return *new(ethtypes.EthUint64), ErrNotSupported
@@ -4667,6 +4314,28 @@ func (s *GatewayStub) EthGetBlockByNumber(p0 context.Context, p1 string, p2 bool
 	return *new(ethtypes.EthBlock), ErrNotSupported
 }
 
+func (s *GatewayStruct) EthGetBlockReceipts(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) {
+	if s.Internal.EthGetBlockReceipts == nil {
+		return *new([]*EthTxReceipt), ErrNotSupported
+	}
+	return s.Internal.EthGetBlockReceipts(p0, p1)
+}
+
+func (s *GatewayStub) EthGetBlockReceipts(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error) {
+	return *new([]*EthTxReceipt), ErrNotSupported
+}
+
+func (s *GatewayStruct) EthGetBlockReceiptsLimited(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) {
+	if s.Internal.EthGetBlockReceiptsLimited == nil {
+		return *new([]*EthTxReceipt), ErrNotSupported
+	}
+	return s.Internal.EthGetBlockReceiptsLimited(p0, p1, p2)
+}
+
+func (s *GatewayStub) EthGetBlockReceiptsLimited(p0 context.Context, p1 ethtypes.EthBlockNumberOrHash, p2 abi.ChainEpoch) ([]*EthTxReceipt, error) {
+	return *new([]*EthTxReceipt), ErrNotSupported
+}
+
 func (s *GatewayStruct) EthGetBlockTransactionCountByHash(p0 context.Context, p1 ethtypes.EthHash) (ethtypes.EthUint64, error) {
 	if s.Internal.EthGetBlockTransactionCountByHash == nil {
 		return *new(ethtypes.EthUint64), ErrNotSupported
@@ -4753,6 +4422,28 @@ func (s *GatewayStruct) EthGetStorageAt(p0 context.Context, p1 ethtypes.EthAddre
 
 func (s *GatewayStub) EthGetStorageAt(p0 context.Context, p1 ethtypes.EthAddress, p2 ethtypes.EthBytes, p3 ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error) {
 	return *new(ethtypes.EthBytes), ErrNotSupported
+}
+
+func (s *GatewayStruct) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	if s.Internal.EthGetTransactionByBlockHashAndIndex == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.EthGetTransactionByBlockHashAndIndex(p0, p1, p2)
+}
+
+func (s *GatewayStub) EthGetTransactionByBlockHashAndIndex(p0 context.Context, p1 ethtypes.EthHash, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *GatewayStruct) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	if s.Internal.EthGetTransactionByBlockNumberAndIndex == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.EthGetTransactionByBlockNumberAndIndex(p0, p1, p2)
+}
+
+func (s *GatewayStub) EthGetTransactionByBlockNumberAndIndex(p0 context.Context, p1 string, p2 ethtypes.EthUint64) (*ethtypes.EthTx, error) {
+	return nil, ErrNotSupported
 }
 
 func (s *GatewayStruct) EthGetTransactionByHash(p0 context.Context, p1 *ethtypes.EthHash) (*ethtypes.EthTx, error) {
@@ -4920,6 +4611,17 @@ func (s *GatewayStub) EthTraceBlock(p0 context.Context, p1 string) ([]*ethtypes.
 	return *new([]*ethtypes.EthTraceBlock), ErrNotSupported
 }
 
+func (s *GatewayStruct) EthTraceFilter(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) {
+	if s.Internal.EthTraceFilter == nil {
+		return *new([]*ethtypes.EthTraceFilterResult), ErrNotSupported
+	}
+	return s.Internal.EthTraceFilter(p0, p1)
+}
+
+func (s *GatewayStub) EthTraceFilter(p0 context.Context, p1 ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error) {
+	return *new([]*ethtypes.EthTraceFilterResult), ErrNotSupported
+}
+
 func (s *GatewayStruct) EthTraceReplayBlockTransactions(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) {
 	if s.Internal.EthTraceReplayBlockTransactions == nil {
 		return *new([]*ethtypes.EthTraceReplayBlockTransaction), ErrNotSupported
@@ -4929,6 +4631,17 @@ func (s *GatewayStruct) EthTraceReplayBlockTransactions(p0 context.Context, p1 s
 
 func (s *GatewayStub) EthTraceReplayBlockTransactions(p0 context.Context, p1 string, p2 []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error) {
 	return *new([]*ethtypes.EthTraceReplayBlockTransaction), ErrNotSupported
+}
+
+func (s *GatewayStruct) EthTraceTransaction(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) {
+	if s.Internal.EthTraceTransaction == nil {
+		return *new([]*ethtypes.EthTraceTransaction), ErrNotSupported
+	}
+	return s.Internal.EthTraceTransaction(p0, p1)
+}
+
+func (s *GatewayStub) EthTraceTransaction(p0 context.Context, p1 string) ([]*ethtypes.EthTraceTransaction, error) {
+	return *new([]*ethtypes.EthTraceTransaction), ErrNotSupported
 }
 
 func (s *GatewayStruct) EthUninstallFilter(p0 context.Context, p1 ethtypes.EthFilterID) (bool, error) {
@@ -4951,6 +4664,39 @@ func (s *GatewayStruct) EthUnsubscribe(p0 context.Context, p1 ethtypes.EthSubscr
 
 func (s *GatewayStub) EthUnsubscribe(p0 context.Context, p1 ethtypes.EthSubscriptionID) (bool, error) {
 	return false, ErrNotSupported
+}
+
+func (s *GatewayStruct) F3GetCertificate(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) {
+	if s.Internal.F3GetCertificate == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.F3GetCertificate(p0, p1)
+}
+
+func (s *GatewayStub) F3GetCertificate(p0 context.Context, p1 uint64) (*certs.FinalityCertificate, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *GatewayStruct) F3GetLatestCertificate(p0 context.Context) (*certs.FinalityCertificate, error) {
+	if s.Internal.F3GetLatestCertificate == nil {
+		return nil, ErrNotSupported
+	}
+	return s.Internal.F3GetLatestCertificate(p0)
+}
+
+func (s *GatewayStub) F3GetLatestCertificate(p0 context.Context) (*certs.FinalityCertificate, error) {
+	return nil, ErrNotSupported
+}
+
+func (s *GatewayStruct) FilecoinAddressToEthAddress(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) {
+	if s.Internal.FilecoinAddressToEthAddress == nil {
+		return *new(ethtypes.EthAddress), ErrNotSupported
+	}
+	return s.Internal.FilecoinAddressToEthAddress(p0, p1)
+}
+
+func (s *GatewayStub) FilecoinAddressToEthAddress(p0 context.Context, p1 jsonrpc.RawParams) (ethtypes.EthAddress, error) {
+	return *new(ethtypes.EthAddress), ErrNotSupported
 }
 
 func (s *GatewayStruct) GasEstimateGasPremium(p0 context.Context, p1 uint64, p2 address.Address, p3 int64, p4 types.TipSetKey) (types.BigInt, error) {
@@ -5833,369 +5579,6 @@ func (s *StorageMinerStub) CreateBackup(p0 context.Context, p1 string) error {
 	return ErrNotSupported
 }
 
-func (s *StorageMinerStruct) DagstoreGC(p0 context.Context) ([]DagstoreShardResult, error) {
-	if s.Internal.DagstoreGC == nil {
-		return *new([]DagstoreShardResult), ErrNotSupported
-	}
-	return s.Internal.DagstoreGC(p0)
-}
-
-func (s *StorageMinerStub) DagstoreGC(p0 context.Context) ([]DagstoreShardResult, error) {
-	return *new([]DagstoreShardResult), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreInitializeAll(p0 context.Context, p1 DagstoreInitializeAllParams) (<-chan DagstoreInitializeAllEvent, error) {
-	if s.Internal.DagstoreInitializeAll == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.DagstoreInitializeAll(p0, p1)
-}
-
-func (s *StorageMinerStub) DagstoreInitializeAll(p0 context.Context, p1 DagstoreInitializeAllParams) (<-chan DagstoreInitializeAllEvent, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreInitializeShard(p0 context.Context, p1 string) error {
-	if s.Internal.DagstoreInitializeShard == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DagstoreInitializeShard(p0, p1)
-}
-
-func (s *StorageMinerStub) DagstoreInitializeShard(p0 context.Context, p1 string) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreListShards(p0 context.Context) ([]DagstoreShardInfo, error) {
-	if s.Internal.DagstoreListShards == nil {
-		return *new([]DagstoreShardInfo), ErrNotSupported
-	}
-	return s.Internal.DagstoreListShards(p0)
-}
-
-func (s *StorageMinerStub) DagstoreListShards(p0 context.Context) ([]DagstoreShardInfo, error) {
-	return *new([]DagstoreShardInfo), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreLookupPieces(p0 context.Context, p1 cid.Cid) ([]DagstoreShardInfo, error) {
-	if s.Internal.DagstoreLookupPieces == nil {
-		return *new([]DagstoreShardInfo), ErrNotSupported
-	}
-	return s.Internal.DagstoreLookupPieces(p0, p1)
-}
-
-func (s *StorageMinerStub) DagstoreLookupPieces(p0 context.Context, p1 cid.Cid) ([]DagstoreShardInfo, error) {
-	return *new([]DagstoreShardInfo), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreRecoverShard(p0 context.Context, p1 string) error {
-	if s.Internal.DagstoreRecoverShard == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DagstoreRecoverShard(p0, p1)
-}
-
-func (s *StorageMinerStub) DagstoreRecoverShard(p0 context.Context, p1 string) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DagstoreRegisterShard(p0 context.Context, p1 string) error {
-	if s.Internal.DagstoreRegisterShard == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DagstoreRegisterShard(p0, p1)
-}
-
-func (s *StorageMinerStub) DagstoreRegisterShard(p0 context.Context, p1 string) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderOfflineRetrievalDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderOfflineRetrievalDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderOfflineRetrievalDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderOfflineRetrievalDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderOfflineStorageDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderOfflineStorageDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderOfflineStorageDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderOfflineStorageDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderOnlineRetrievalDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderOnlineRetrievalDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderOnlineRetrievalDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderOnlineRetrievalDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderOnlineStorageDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderOnlineStorageDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderOnlineStorageDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderOnlineStorageDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderUnverifiedStorageDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderUnverifiedStorageDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderUnverifiedStorageDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderUnverifiedStorageDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsConsiderVerifiedStorageDeals(p0 context.Context) (bool, error) {
-	if s.Internal.DealsConsiderVerifiedStorageDeals == nil {
-		return false, ErrNotSupported
-	}
-	return s.Internal.DealsConsiderVerifiedStorageDeals(p0)
-}
-
-func (s *StorageMinerStub) DealsConsiderVerifiedStorageDeals(p0 context.Context) (bool, error) {
-	return false, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsImportData(p0 context.Context, p1 cid.Cid, p2 string) error {
-	if s.Internal.DealsImportData == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsImportData(p0, p1, p2)
-}
-
-func (s *StorageMinerStub) DealsImportData(p0 context.Context, p1 cid.Cid, p2 string) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsList(p0 context.Context) ([]*MarketDeal, error) {
-	if s.Internal.DealsList == nil {
-		return *new([]*MarketDeal), ErrNotSupported
-	}
-	return s.Internal.DealsList(p0)
-}
-
-func (s *StorageMinerStub) DealsList(p0 context.Context) ([]*MarketDeal, error) {
-	return *new([]*MarketDeal), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsPieceCidBlocklist(p0 context.Context) ([]cid.Cid, error) {
-	if s.Internal.DealsPieceCidBlocklist == nil {
-		return *new([]cid.Cid), ErrNotSupported
-	}
-	return s.Internal.DealsPieceCidBlocklist(p0)
-}
-
-func (s *StorageMinerStub) DealsPieceCidBlocklist(p0 context.Context) ([]cid.Cid, error) {
-	return *new([]cid.Cid), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderOfflineRetrievalDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderOfflineRetrievalDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderOfflineRetrievalDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderOfflineRetrievalDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderOfflineStorageDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderOfflineStorageDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderOfflineStorageDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderOfflineStorageDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderOnlineRetrievalDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderOnlineRetrievalDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderOnlineRetrievalDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderOnlineRetrievalDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderOnlineStorageDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderOnlineStorageDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderOnlineStorageDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderOnlineStorageDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderUnverifiedStorageDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderUnverifiedStorageDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderUnverifiedStorageDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderUnverifiedStorageDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetConsiderVerifiedStorageDeals(p0 context.Context, p1 bool) error {
-	if s.Internal.DealsSetConsiderVerifiedStorageDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetConsiderVerifiedStorageDeals(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetConsiderVerifiedStorageDeals(p0 context.Context, p1 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) DealsSetPieceCidBlocklist(p0 context.Context, p1 []cid.Cid) error {
-	if s.Internal.DealsSetPieceCidBlocklist == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.DealsSetPieceCidBlocklist(p0, p1)
-}
-
-func (s *StorageMinerStub) DealsSetPieceCidBlocklist(p0 context.Context, p1 []cid.Cid) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) IndexerAnnounceAllDeals(p0 context.Context) error {
-	if s.Internal.IndexerAnnounceAllDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.IndexerAnnounceAllDeals(p0)
-}
-
-func (s *StorageMinerStub) IndexerAnnounceAllDeals(p0 context.Context) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) IndexerAnnounceDeal(p0 context.Context, p1 cid.Cid) error {
-	if s.Internal.IndexerAnnounceDeal == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.IndexerAnnounceDeal(p0, p1)
-}
-
-func (s *StorageMinerStub) IndexerAnnounceDeal(p0 context.Context, p1 cid.Cid) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketCancelDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	if s.Internal.MarketCancelDataTransfer == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketCancelDataTransfer(p0, p1, p2, p3)
-}
-
-func (s *StorageMinerStub) MarketCancelDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketDataTransferDiagnostics(p0 context.Context, p1 peer.ID) (*TransferDiagnostics, error) {
-	if s.Internal.MarketDataTransferDiagnostics == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.MarketDataTransferDiagnostics(p0, p1)
-}
-
-func (s *StorageMinerStub) MarketDataTransferDiagnostics(p0 context.Context, p1 peer.ID) (*TransferDiagnostics, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketDataTransferUpdates(p0 context.Context) (<-chan DataTransferChannel, error) {
-	if s.Internal.MarketDataTransferUpdates == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.MarketDataTransferUpdates(p0)
-}
-
-func (s *StorageMinerStub) MarketDataTransferUpdates(p0 context.Context) (<-chan DataTransferChannel, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketGetAsk(p0 context.Context) (*storagemarket.SignedStorageAsk, error) {
-	if s.Internal.MarketGetAsk == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.MarketGetAsk(p0)
-}
-
-func (s *StorageMinerStub) MarketGetAsk(p0 context.Context) (*storagemarket.SignedStorageAsk, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketGetDealUpdates(p0 context.Context) (<-chan storagemarket.MinerDeal, error) {
-	if s.Internal.MarketGetDealUpdates == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.MarketGetDealUpdates(p0)
-}
-
-func (s *StorageMinerStub) MarketGetDealUpdates(p0 context.Context) (<-chan storagemarket.MinerDeal, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketGetRetrievalAsk(p0 context.Context) (*retrievalmarket.Ask, error) {
-	if s.Internal.MarketGetRetrievalAsk == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.MarketGetRetrievalAsk(p0)
-}
-
-func (s *StorageMinerStub) MarketGetRetrievalAsk(p0 context.Context) (*retrievalmarket.Ask, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketImportDealData(p0 context.Context, p1 cid.Cid, p2 string) error {
-	if s.Internal.MarketImportDealData == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketImportDealData(p0, p1, p2)
-}
-
-func (s *StorageMinerStub) MarketImportDealData(p0 context.Context, p1 cid.Cid, p2 string) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketListDataTransfers(p0 context.Context) ([]DataTransferChannel, error) {
-	if s.Internal.MarketListDataTransfers == nil {
-		return *new([]DataTransferChannel), ErrNotSupported
-	}
-	return s.Internal.MarketListDataTransfers(p0)
-}
-
-func (s *StorageMinerStub) MarketListDataTransfers(p0 context.Context) ([]DataTransferChannel, error) {
-	return *new([]DataTransferChannel), ErrNotSupported
-}
-
 func (s *StorageMinerStruct) MarketListDeals(p0 context.Context) ([]*MarketDeal, error) {
 	if s.Internal.MarketListDeals == nil {
 		return *new([]*MarketDeal), ErrNotSupported
@@ -6207,94 +5590,6 @@ func (s *StorageMinerStub) MarketListDeals(p0 context.Context) ([]*MarketDeal, e
 	return *new([]*MarketDeal), ErrNotSupported
 }
 
-func (s *StorageMinerStruct) MarketListIncompleteDeals(p0 context.Context) ([]storagemarket.MinerDeal, error) {
-	if s.Internal.MarketListIncompleteDeals == nil {
-		return *new([]storagemarket.MinerDeal), ErrNotSupported
-	}
-	return s.Internal.MarketListIncompleteDeals(p0)
-}
-
-func (s *StorageMinerStub) MarketListIncompleteDeals(p0 context.Context) ([]storagemarket.MinerDeal, error) {
-	return *new([]storagemarket.MinerDeal), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketListRetrievalDeals(p0 context.Context) ([]struct{}, error) {
-	if s.Internal.MarketListRetrievalDeals == nil {
-		return *new([]struct{}), ErrNotSupported
-	}
-	return s.Internal.MarketListRetrievalDeals(p0)
-}
-
-func (s *StorageMinerStub) MarketListRetrievalDeals(p0 context.Context) ([]struct{}, error) {
-	return *new([]struct{}), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketPendingDeals(p0 context.Context) (PendingDealInfo, error) {
-	if s.Internal.MarketPendingDeals == nil {
-		return *new(PendingDealInfo), ErrNotSupported
-	}
-	return s.Internal.MarketPendingDeals(p0)
-}
-
-func (s *StorageMinerStub) MarketPendingDeals(p0 context.Context) (PendingDealInfo, error) {
-	return *new(PendingDealInfo), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketPublishPendingDeals(p0 context.Context) error {
-	if s.Internal.MarketPublishPendingDeals == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketPublishPendingDeals(p0)
-}
-
-func (s *StorageMinerStub) MarketPublishPendingDeals(p0 context.Context) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketRestartDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	if s.Internal.MarketRestartDataTransfer == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketRestartDataTransfer(p0, p1, p2, p3)
-}
-
-func (s *StorageMinerStub) MarketRestartDataTransfer(p0 context.Context, p1 datatransfer.TransferID, p2 peer.ID, p3 bool) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketRetryPublishDeal(p0 context.Context, p1 cid.Cid) error {
-	if s.Internal.MarketRetryPublishDeal == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketRetryPublishDeal(p0, p1)
-}
-
-func (s *StorageMinerStub) MarketRetryPublishDeal(p0 context.Context, p1 cid.Cid) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketSetAsk(p0 context.Context, p1 types.BigInt, p2 types.BigInt, p3 abi.ChainEpoch, p4 abi.PaddedPieceSize, p5 abi.PaddedPieceSize) error {
-	if s.Internal.MarketSetAsk == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketSetAsk(p0, p1, p2, p3, p4, p5)
-}
-
-func (s *StorageMinerStub) MarketSetAsk(p0 context.Context, p1 types.BigInt, p2 types.BigInt, p3 abi.ChainEpoch, p4 abi.PaddedPieceSize, p5 abi.PaddedPieceSize) error {
-	return ErrNotSupported
-}
-
-func (s *StorageMinerStruct) MarketSetRetrievalAsk(p0 context.Context, p1 *retrievalmarket.Ask) error {
-	if s.Internal.MarketSetRetrievalAsk == nil {
-		return ErrNotSupported
-	}
-	return s.Internal.MarketSetRetrievalAsk(p0, p1)
-}
-
-func (s *StorageMinerStub) MarketSetRetrievalAsk(p0 context.Context, p1 *retrievalmarket.Ask) error {
-	return ErrNotSupported
-}
-
 func (s *StorageMinerStruct) MiningBase(p0 context.Context) (*types.TipSet, error) {
 	if s.Internal.MiningBase == nil {
 		return nil, ErrNotSupported
@@ -6304,50 +5599,6 @@ func (s *StorageMinerStruct) MiningBase(p0 context.Context) (*types.TipSet, erro
 
 func (s *StorageMinerStub) MiningBase(p0 context.Context) (*types.TipSet, error) {
 	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) PiecesGetCIDInfo(p0 context.Context, p1 cid.Cid) (*piecestore.CIDInfo, error) {
-	if s.Internal.PiecesGetCIDInfo == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.PiecesGetCIDInfo(p0, p1)
-}
-
-func (s *StorageMinerStub) PiecesGetCIDInfo(p0 context.Context, p1 cid.Cid) (*piecestore.CIDInfo, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) PiecesGetPieceInfo(p0 context.Context, p1 cid.Cid) (*piecestore.PieceInfo, error) {
-	if s.Internal.PiecesGetPieceInfo == nil {
-		return nil, ErrNotSupported
-	}
-	return s.Internal.PiecesGetPieceInfo(p0, p1)
-}
-
-func (s *StorageMinerStub) PiecesGetPieceInfo(p0 context.Context, p1 cid.Cid) (*piecestore.PieceInfo, error) {
-	return nil, ErrNotSupported
-}
-
-func (s *StorageMinerStruct) PiecesListCidInfos(p0 context.Context) ([]cid.Cid, error) {
-	if s.Internal.PiecesListCidInfos == nil {
-		return *new([]cid.Cid), ErrNotSupported
-	}
-	return s.Internal.PiecesListCidInfos(p0)
-}
-
-func (s *StorageMinerStub) PiecesListCidInfos(p0 context.Context) ([]cid.Cid, error) {
-	return *new([]cid.Cid), ErrNotSupported
-}
-
-func (s *StorageMinerStruct) PiecesListPieces(p0 context.Context) ([]cid.Cid, error) {
-	if s.Internal.PiecesListPieces == nil {
-		return *new([]cid.Cid), ErrNotSupported
-	}
-	return s.Internal.PiecesListPieces(p0)
-}
-
-func (s *StorageMinerStub) PiecesListPieces(p0 context.Context) ([]cid.Cid, error) {
-	return *new([]cid.Cid), ErrNotSupported
 }
 
 func (s *StorageMinerStruct) PledgeSector(p0 context.Context) (abi.SectorID, error) {
@@ -6988,14 +6239,14 @@ func (s *StorageMinerStub) StorageAuthVerify(p0 context.Context, p1 string) ([]a
 	return *new([]auth.Permission), ErrNotSupported
 }
 
-func (s *StorageMinerStruct) StorageBestAlloc(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType) ([]storiface.StorageInfo, error) {
+func (s *StorageMinerStruct) StorageBestAlloc(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType, p4 abi.ActorID) ([]storiface.StorageInfo, error) {
 	if s.Internal.StorageBestAlloc == nil {
 		return *new([]storiface.StorageInfo), ErrNotSupported
 	}
-	return s.Internal.StorageBestAlloc(p0, p1, p2, p3)
+	return s.Internal.StorageBestAlloc(p0, p1, p2, p3, p4)
 }
 
-func (s *StorageMinerStub) StorageBestAlloc(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType) ([]storiface.StorageInfo, error) {
+func (s *StorageMinerStub) StorageBestAlloc(p0 context.Context, p1 storiface.SectorFileType, p2 abi.SectorSize, p3 storiface.PathType, p4 abi.ActorID) ([]storiface.StorageInfo, error) {
 	return *new([]storiface.StorageInfo), ErrNotSupported
 }
 
@@ -7672,8 +6923,6 @@ func (s *WorkerStub) WaitQuiet(p0 context.Context) error {
 
 var _ ChainIO = new(ChainIOStruct)
 var _ Common = new(CommonStruct)
-var _ CommonNet = new(CommonNetStruct)
-var _ Curio = new(CurioStruct)
 var _ EthSubscriber = new(EthSubscriberStruct)
 var _ FullNode = new(FullNodeStruct)
 var _ Gateway = new(GatewayStruct)

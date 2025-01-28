@@ -2,16 +2,17 @@ package node
 
 import (
 	"os"
+	"time"
 
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/network"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/go-fil-markets/discovery"
-	discoveryimpl "github.com/filecoin-project/go-fil-markets/discovery/impl"
-	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-f3/manifest"
 
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain"
 	"github.com/filecoin-project/lotus/chain/beacon"
 	"github.com/filecoin-project/lotus/chain/consensus"
@@ -21,9 +22,12 @@ import (
 	"github.com/filecoin-project/lotus/chain/exchange"
 	"github.com/filecoin-project/lotus/chain/gen/slashfilter"
 	"github.com/filecoin-project/lotus/chain/index"
+	"github.com/filecoin-project/lotus/chain/lf3"
 	"github.com/filecoin-project/lotus/chain/market"
 	"github.com/filecoin-project/lotus/chain/messagepool"
 	"github.com/filecoin-project/lotus/chain/messagesigner"
+	"github.com/filecoin-project/lotus/chain/proofs"
+	proofsffi "github.com/filecoin-project/lotus/chain/proofs/ffi"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/store"
@@ -32,14 +36,17 @@ import (
 	ledgerwallet "github.com/filecoin-project/lotus/chain/wallet/ledger"
 	"github.com/filecoin-project/lotus/chain/wallet/remotewallet"
 	"github.com/filecoin-project/lotus/lib/peermgr"
-	"github.com/filecoin-project/lotus/markets/retrievaladapter"
-	"github.com/filecoin-project/lotus/markets/storageadapter"
 	"github.com/filecoin-project/lotus/node/config"
 	"github.com/filecoin-project/lotus/node/hello"
 	"github.com/filecoin-project/lotus/node/impl"
+	"github.com/filecoin-project/lotus/node/impl/common"
+	"github.com/filecoin-project/lotus/node/impl/eth"
 	"github.com/filecoin-project/lotus/node/impl/full"
+	"github.com/filecoin-project/lotus/node/impl/gasutils"
+	"github.com/filecoin-project/lotus/node/impl/net"
 	"github.com/filecoin-project/lotus/node/modules"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
+	"github.com/filecoin-project/lotus/node/modules/lp2p"
 	"github.com/filecoin-project/lotus/node/repo"
 	"github.com/filecoin-project/lotus/paychmgr"
 	"github.com/filecoin-project/lotus/paychmgr/settler"
@@ -67,7 +74,8 @@ var ChainNode = Options(
 	Override(new(dtypes.DrandBootstrap), modules.DrandBootstrap),
 
 	// Consensus: crypto dependencies
-	Override(new(storiface.Verifier), ffiwrapper.ProofVerifier),
+	Override(new(proofs.Verifier), ffiwrapper.ProofVerifier),
+	Override(new(storiface.Verifier), proofsffi.ProofVerifier),
 	Override(new(storiface.Prover), ffiwrapper.ProofProver),
 
 	// Consensus: LegacyVM
@@ -104,9 +112,6 @@ var ChainNode = Options(
 	Override(new(*messagepool.MessagePool), modules.MessagePool),
 	Override(new(*dtypes.MpoolLocker), new(dtypes.MpoolLocker)),
 
-	// Shared graphsync (markets, serving chain)
-	Override(new(dtypes.Graphsync), modules.Graphsync(config.DefaultFullNode().Client.SimultaneousTransfersForStorage, config.DefaultFullNode().Client.SimultaneousTransfersForRetrieval)),
-
 	// Service: Wallet
 	Override(new(*messagesigner.MessageSigner), messagesigner.NewMessageSigner),
 	Override(new(messagesigner.MsgSigner), func(ms *messagesigner.MessageSigner) *messagesigner.MessageSigner { return ms }),
@@ -121,27 +126,10 @@ var ChainNode = Options(
 	Override(HandlePaymentChannelManagerKey, modules.HandlePaychManager),
 	Override(SettlePaymentChannelsKey, settler.SettlePaymentChannels),
 
-	// Markets (common)
-	Override(new(*discoveryimpl.Local), modules.NewLocalDiscovery),
-
-	// Markets (retrieval)
-	Override(new(discovery.PeerResolver), modules.RetrievalResolver),
-	Override(new(retrievalmarket.BlockstoreAccessor), modules.RetrievalBlockstoreAccessor),
-	Override(new(retrievalmarket.RetrievalClient), modules.RetrievalClient(false)),
-	Override(new(dtypes.ClientDataTransfer), modules.NewClientGraphsyncDataTransfer),
-
 	// Markets (storage)
 	Override(new(*market.FundManager), market.NewFundManager),
-	Override(new(dtypes.ClientDatastore), modules.NewClientDatastore),
-	Override(new(storagemarket.BlockstoreAccessor), modules.StorageBlockstoreAccessor),
-	Override(new(*retrievaladapter.APIBlockstoreAccessor), retrievaladapter.NewAPIBlockstoreAdapter),
-	Override(new(storagemarket.StorageClient), modules.StorageClient),
-	Override(new(storagemarket.StorageClientNode), storageadapter.NewClientNodeAdapter),
-	Override(HandleMigrateClientFundsKey, modules.HandleMigrateClientFunds),
 
-	Override(new(*full.GasPriceCache), full.NewGasPriceCache),
-
-	Override(RelayIndexerMessagesKey, modules.RelayIndexerMessages),
+	Override(new(*gasutils.GasPriceCache), gasutils.NewGasPriceCache),
 
 	// Lite node API
 	ApplyIf(isLiteNode,
@@ -152,9 +140,21 @@ var ChainNode = Options(
 		Override(new(full.MpoolModuleAPI), From(new(api.Gateway))),
 		Override(new(full.StateModuleAPI), From(new(api.Gateway))),
 		Override(new(stmgr.StateManagerAPI), rpcstmgr.NewRPCStateManager),
-		Override(new(full.EthModuleAPI), From(new(api.Gateway))),
-		Override(new(full.EthEventAPI), From(new(api.Gateway))),
 		Override(new(full.ActorEventAPI), From(new(api.Gateway))),
+		Override(new(eth.EthFilecoinAPI), From(new(api.Gateway))),
+		Override(new(eth.EthBasicAPI), From(new(api.Gateway))),
+		Override(new(eth.EthEventsAPI), From(new(api.Gateway))),
+		Override(new(eth.EthTransactionAPI), From(new(api.Gateway))),
+		Override(new(eth.EthLookupAPI), From(new(api.Gateway))),
+		Override(new(eth.EthTraceAPI), From(new(api.Gateway))),
+		Override(new(eth.EthGasAPI), From(new(api.Gateway))),
+		// EthSendAPI is a special case, we block the Untrusted method via GatewayEthSend even though it
+		// shouldn't be exposed on the Gateway API.
+		Override(new(eth.EthSendAPI), new(modules.GatewayEthSend)),
+
+		Override(new(index.Indexer), modules.ChainIndexer(config.ChainIndexerConfig{
+			EnableIndexer: false,
+		})),
 	),
 
 	// Full node API / service startup
@@ -173,6 +173,12 @@ var ChainNode = Options(
 		Override(HandleIncomingMessagesKey, modules.HandleIncomingMessages),
 		Override(HandleIncomingBlocksKey, modules.HandleIncomingBlocks),
 	),
+
+	If(build.IsF3Enabled(),
+		Override(new(*lf3.Config), lf3.NewConfig),
+		Override(new(manifest.ManifestProvider), lf3.NewManifestProvider),
+		Override(new(*lf3.F3), lf3.New),
+	),
 )
 
 func ConfigFullNode(c interface{}) Option {
@@ -181,11 +187,40 @@ func ConfigFullNode(c interface{}) Option {
 		return Error(xerrors.Errorf("invalid config from repo, got: %T", c))
 	}
 
-	enableLibp2pNode := true // always enable libp2p for full nodes
+	if cfg.Fevm.EnableEthRPC && !cfg.ChainIndexer.EnableIndexer {
+		return Error(xerrors.New("EnableIndexer in the ChainIndexer configuration section must be set to true when setting EnableEthRPC to true"))
+	}
+	if cfg.Events.EnableActorEventsAPI && !cfg.ChainIndexer.EnableIndexer {
+		return Error(xerrors.New("EnableIndexer in the ChainIndexer configuration section must be set to true when setting EnableActorEventsAPI to true"))
+	}
 
-	ipfsMaddr := cfg.Client.IpfsMAddr
 	return Options(
-		ConfigCommon(&cfg.Common, enableLibp2pNode),
+		ConfigCommon(&cfg.Common, build.NodeUserVersion()),
+
+		// always enable libp2p for full nodes
+		Override(new(api.Net), new(api.NetStub)),
+		Override(new(api.Common), From(new(common.CommonAPI))),
+		Override(new(api.Net), From(new(net.NetAPI))),
+		Override(new(api.Common), From(new(common.CommonAPI))),
+		Override(StartListeningKey, lp2p.StartListening(cfg.Libp2p.ListenAddresses)),
+		Override(ConnectionManagerKey, lp2p.ConnectionManager(
+			cfg.Libp2p.ConnMgrLow,
+			cfg.Libp2p.ConnMgrHigh,
+			time.Duration(cfg.Libp2p.ConnMgrGrace),
+			cfg.Libp2p.ProtectedPeers)),
+		Override(new(network.ResourceManager), lp2p.ResourceManager(cfg.Libp2p.ConnMgrHigh)),
+		Override(new(*pubsub.PubSub), lp2p.GossipSub),
+		Override(new(*config.Pubsub), &cfg.Pubsub),
+
+		ApplyIf(func(s *Settings) bool { return len(cfg.Libp2p.BootstrapPeers) > 0 },
+			Override(new(dtypes.BootstrapPeers), modules.ConfigBootstrap(cfg.Libp2p.BootstrapPeers)),
+		),
+
+		Override(AddrsFactoryKey, lp2p.AddrsFactory(
+			cfg.Libp2p.AnnounceAddresses,
+			cfg.Libp2p.NoAnnounceAddresses)),
+
+		If(!cfg.Libp2p.DisableNatPortMap, Override(NatPortMapKey, lp2p.NatPortMap)),
 
 		Override(new(dtypes.UniversalBlockstore), modules.UniversalBlockstore),
 
@@ -223,22 +258,7 @@ func ConfigFullNode(c interface{}) Option {
 		// If the Eth JSON-RPC is enabled, enable storing events at the ChainStore.
 		// This is the case even if real-time and historic filtering are disabled,
 		// as it enables us to serve logs in eth_getTransactionReceipt.
-		If(cfg.Fevm.EnableEthRPC || cfg.Events.EnableActorEventsAPI, Override(StoreEventsKey, modules.EnableStoringEvents)),
-
-		Override(new(dtypes.ClientImportMgr), modules.ClientImportMgr),
-
-		Override(new(dtypes.ClientBlockstore), modules.ClientBlockstore),
-
-		If(cfg.Client.UseIpfs,
-			Override(new(dtypes.ClientBlockstore), modules.IpfsClientBlockstore(ipfsMaddr, cfg.Client.IpfsOnlineMode)),
-			Override(new(storagemarket.BlockstoreAccessor), modules.IpfsStorageBlockstoreAccessor),
-			If(cfg.Client.IpfsUseForRetrieval,
-				Override(new(retrievalmarket.BlockstoreAccessor), modules.IpfsRetrievalBlockstoreAccessor),
-			),
-		),
-		Override(new(dtypes.Graphsync), modules.Graphsync(cfg.Client.SimultaneousTransfersForStorage, cfg.Client.SimultaneousTransfersForRetrieval)),
-
-		Override(new(retrievalmarket.RetrievalClient), modules.RetrievalClient(cfg.Client.OffChainRetrieval)),
+		If(cfg.Fevm.EnableEthRPC || cfg.Events.EnableActorEventsAPI || cfg.ChainIndexer.EnableIndexer, Override(StoreEventsKey, modules.EnableStoringEvents)),
 
 		If(cfg.Wallet.RemoteBackend != "",
 			Override(new(*remotewallet.RemoteWallet), remotewallet.SetupRemoteWallet(cfg.Wallet.RemoteBackend)),
@@ -251,38 +271,67 @@ func ConfigFullNode(c interface{}) Option {
 			Override(new(wallet.Default), wallet.NilDefault),
 		),
 
-		// Actor event filtering support
-		Override(new(events.EventHelperAPI), From(new(modules.EventHelperAPI))),
-		Override(new(*filter.EventFilterManager), modules.EventFilterManager(cfg.Fevm)),
-
-		// in lite-mode Eth api is provided by gateway
+		// In lite-mode Eth and events API is provided by gateway
 		ApplyIf(isFullNode,
+			If(cfg.Fevm.EnableEthRPC || cfg.Events.EnableActorEventsAPI,
+				// Actor event filtering support, only needed for either Eth RPC and ActorEvents API
+				Override(new(events.EventHelperAPI), From(new(modules.EventHelperAPI))),
+				Override(new(*filter.EventFilterManager), modules.MakeEventFilterManager(cfg.Events)),
+			),
+
+			Override(new(eth.ChainStore), From(new(*store.ChainStore))),
+			Override(new(eth.StateManager), From(new(*stmgr.StateManager))),
+			Override(new(eth.EthFilecoinAPI), eth.NewEthFilecoinAPI),
+
 			If(cfg.Fevm.EnableEthRPC,
-				Override(new(full.EthModuleAPI), modules.EthModuleAPI(cfg.Fevm)),
-				Override(new(full.EthEventAPI), modules.EthEventHandler(cfg.Fevm)),
+				Override(new(eth.StateAPI), From(new(full.StateAPI))),
+				Override(new(eth.SyncAPI), From(new(full.SyncAPI))),
+				Override(new(eth.MpoolAPI), From(new(full.MpoolAPI))),
+				Override(new(eth.MessagePool), From(new(*messagepool.MessagePool))),
+				Override(new(eth.GasAPI), From(new(full.GasModule))),
+
+				Override(new(eth.EthBasicAPI), eth.NewEthBasicAPI),
+				Override(new(eth.EthEventsInternal), modules.MakeEthEventsExtended(cfg.Events, cfg.Fevm.EnableEthRPC)),
+				Override(new(eth.EthEventsAPI), From(new(eth.EthEventsInternal))),
+				Override(new(eth.EthTransactionAPI), modules.MakeEthTransaction(cfg.Fevm)),
+				Override(new(eth.EthLookupAPI), eth.NewEthLookupAPI),
+				Override(new(eth.EthTraceAPI), modules.MakeEthTrace(cfg.Fevm)),
+				Override(new(eth.EthGasAPI), eth.NewEthGasAPI),
+				Override(new(eth.EthSendAPI), eth.NewEthSendAPI),
 			),
 			If(!cfg.Fevm.EnableEthRPC,
-				Override(new(full.EthModuleAPI), &full.EthModuleDummy{}),
-				Override(new(full.EthEventAPI), &full.EthModuleDummy{}),
+				Override(new(eth.EthBasicAPI), &eth.EthBasicDisabled{}),
+				Override(new(eth.EthTransactionAPI), &eth.EthTransactionDisabled{}),
+				Override(new(eth.EthLookupAPI), &eth.EthLookupDisabled{}),
+				Override(new(eth.EthTraceAPI), &eth.EthTraceDisabled{}),
+				Override(new(eth.EthGasAPI), &eth.EthGasDisabled{}),
+				Override(new(eth.EthEventsAPI), &eth.EthEventsDisabled{}),
+				Override(new(eth.EthSendAPI), &eth.EthSendDisabled{}),
 			),
-		),
 
-		ApplyIf(isFullNode,
 			If(cfg.Events.EnableActorEventsAPI,
-				Override(new(full.ActorEventAPI), modules.ActorEventHandler(cfg.Events.EnableActorEventsAPI, cfg.Fevm)),
+				Override(new(full.ActorEventAPI), modules.ActorEventHandler(cfg.Events)),
 			),
 			If(!cfg.Events.EnableActorEventsAPI,
 				Override(new(full.ActorEventAPI), &full.ActorEventDummy{}),
 			),
 		),
 
-		// enable message index for full node when configured by the user, otherwise use dummy.
-		If(cfg.Index.EnableMsgIndex, Override(new(index.MsgIndex), modules.MsgIndex)),
-		If(!cfg.Index.EnableMsgIndex, Override(new(index.MsgIndex), modules.DummyMsgIndex)),
-
 		// enable fault reporter when configured by the user
 		If(cfg.FaultReporter.EnableConsensusFaultReporter,
 			Override(ConsensusReporterKey, modules.RunConsensusFaultReporter(cfg.FaultReporter)),
+		),
+
+		ApplyIf(isLiteNode,
+			Override(new(full.ChainIndexerAPI), func() full.ChainIndexerAPI { return nil }),
+		),
+
+		ApplyIf(isFullNode,
+			Override(new(index.Indexer), modules.ChainIndexer(cfg.ChainIndexer)),
+			Override(new(full.ChainIndexerAPI), modules.ChainIndexHandler(cfg.ChainIndexer)),
+			If(cfg.ChainIndexer.EnableIndexer,
+				Override(InitChainIndexerKey, modules.InitChainIndexer),
+			),
 		),
 	)
 }

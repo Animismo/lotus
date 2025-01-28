@@ -22,7 +22,7 @@ import (
 	miner2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/miner"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -226,7 +226,7 @@ var actorWithdrawCmd = &cli.Command{
 		&cli.IntFlag{
 			Name:  "confidence",
 			Usage: "number of block confirmations to wait for",
-			Value: int(build.MessageConfidence),
+			Value: int(buildconstants.MessageConfidence),
 		},
 		&cli.BoolFlag{
 			Name:  "beneficiary",
@@ -451,7 +451,7 @@ var actorSetOwnerCmd = &cli.Command{
 		fmt.Println("Message CID:", smsg.Cid())
 
 		// wait for it to get mined into a block
-		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
@@ -719,12 +719,12 @@ var actorControlSet = &cli.Command{
 				return err
 			}
 
-			fmt.Fprintln(cctx.App.Writer, hex.EncodeToString(msgBytes))
+			_, _ = fmt.Fprintln(cctx.App.Writer, hex.EncodeToString(msgBytes))
 			return nil
 		}
 
 		if !cctx.Bool("really-do-it") {
-			fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
 			return nil
 		}
 
@@ -760,7 +760,7 @@ var actorProposeChangeWorker = &cli.Command{
 		}
 
 		if !cctx.Bool("really-do-it") {
-			fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
 			return nil
 		}
 
@@ -840,17 +840,17 @@ var actorProposeChangeWorker = &cli.Command{
 			return xerrors.Errorf("mpool push: %w", err)
 		}
 
-		fmt.Fprintln(cctx.App.Writer, "Propose Message CID:", smsg.Cid())
+		_, _ = fmt.Fprintln(cctx.App.Writer, "Propose Message CID:", smsg.Cid())
 
 		// wait for it to get mined into a block
-		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
 
 		// check it executed successfully
 		if wait.Receipt.ExitCode.IsError() {
-			fmt.Fprintln(cctx.App.Writer, "Propose worker change failed!")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "Propose worker change failed!")
 			return err
 		}
 
@@ -859,11 +859,11 @@ var actorProposeChangeWorker = &cli.Command{
 			return err
 		}
 		if mi.NewWorker != newAddr {
-			return fmt.Errorf("Proposed worker address change not reflected on chain: expected '%s', found '%s'", na, mi.NewWorker)
+			return fmt.Errorf("proposed worker address change not reflected on chain: expected '%s', found '%s'", na, mi.NewWorker)
 		}
 
-		fmt.Fprintf(cctx.App.Writer, "Worker key change to %s successfully proposed.\n", na)
-		fmt.Fprintf(cctx.App.Writer, "Call 'confirm-change-worker' at or after height %d to complete.\n", mi.WorkerChangeEpoch)
+		_, _ = fmt.Fprintf(cctx.App.Writer, "Worker key change to %s successfully proposed.\n", na)
+		_, _ = fmt.Fprintf(cctx.App.Writer, "Call 'confirm-change-worker' at or after height %d to complete.\n", mi.WorkerChangeEpoch)
 
 		return nil
 	},
@@ -890,7 +890,7 @@ var actorConfirmChangeWorker = &cli.Command{
 		}
 
 		if !cctx.Bool("really-do-it") {
-			fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "Pass --really-do-it to actually execute this action")
 			return nil
 		}
 
@@ -961,17 +961,17 @@ var actorConfirmChangeWorker = &cli.Command{
 			return xerrors.Errorf("mpool push: %w", err)
 		}
 
-		fmt.Fprintln(cctx.App.Writer, "Confirm Message CID:", smsg.Cid())
+		_, _ = fmt.Fprintln(cctx.App.Writer, "Confirm Message CID:", smsg.Cid())
 
 		// wait for it to get mined into a block
-		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		wait, err := nodeAPI.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
 
 		// check it executed successfully
 		if wait.Receipt.ExitCode.IsError() {
-			fmt.Fprintln(cctx.App.Writer, "Worker change failed!")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "Worker change failed!")
 			return err
 		}
 
@@ -980,7 +980,7 @@ var actorConfirmChangeWorker = &cli.Command{
 			return err
 		}
 		if mi.Worker != newAddr {
-			return fmt.Errorf("Confirmed worker address change not reflected on chain: expected '%s', found '%s'", newAddr, mi.Worker)
+			return fmt.Errorf("confirmed worker address change not reflected on chain: expected '%s', found '%s'", newAddr, mi.Worker)
 		}
 
 		return nil
@@ -1112,7 +1112,7 @@ var actorProposeChangeBeneficiary = &cli.Command{
 		fmt.Println("Propose Message CID:", smsg.Cid())
 
 		// wait for it to get mined into a block
-		wait, err := api.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		wait, err := api.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return xerrors.Errorf("waiting for message to be included in block: %w", err)
 		}
@@ -1235,7 +1235,7 @@ var actorConfirmChangeBeneficiary = &cli.Command{
 		fmt.Println("Confirm Message CID:", smsg.Cid())
 
 		// wait for it to get mined into a block
-		wait, err := api.StateWaitMsg(ctx, smsg.Cid(), build.MessageConfidence)
+		wait, err := api.StateWaitMsg(ctx, smsg.Cid(), buildconstants.MessageConfidence)
 		if err != nil {
 			return xerrors.Errorf("waiting for message to be included in block: %w", err)
 		}

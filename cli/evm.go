@@ -325,7 +325,7 @@ var EvmInvokeCmd = &cli.Command{
 			Usage: "optionally specify the account to use for sending the exec message",
 		}, &cli.IntFlag{
 			Name:  "value",
-			Usage: "optionally specify the value to be sent with the invokation message",
+			Usage: "optionally specify the value to be sent with the invocation message",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
@@ -471,8 +471,8 @@ func ethAddrFromFilecoinAddress(ctx context.Context, addr address.Address, fnapi
 		if err != nil {
 			return ethtypes.EthAddress{}, addr, err
 		}
-		if fAct.Address != nil && (*fAct.Address).Protocol() == address.Delegated {
-			faddr = *fAct.Address
+		if fAct.DelegatedAddress != nil && (*fAct.DelegatedAddress).Protocol() == address.Delegated {
+			faddr = *fAct.DelegatedAddress
 		}
 	case address.Delegated:
 		faddr = addr

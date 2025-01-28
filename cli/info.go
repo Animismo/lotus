@@ -3,9 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
-	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -14,16 +12,15 @@ import (
 	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
 
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-state-types/big"
 
 	"github.com/filecoin-project/lotus/api/v1api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/journal/alerting"
 )
 
-var infoCmd = &cli.Command{
+var InfoCmd = &cli.Command{
 	Name:   "info",
 	Usage:  "Print node info",
 	Action: infoCmdAct,
@@ -48,7 +45,7 @@ func infoCmdAct(cctx *cli.Context) error {
 	}
 
 	fmt.Printf("Network: %s\n", network.NetworkName)
-	fmt.Printf("StartTime: %s (started at %s)\n", time.Now().Sub(start).Truncate(time.Second), start.Truncate(time.Second))
+	fmt.Printf("StartTime: %s (started at %s)\n", time.Since(start).Truncate(time.Second), start.Truncate(time.Second))
 	fmt.Print("Chain: ")
 	err = SyncBasefeeCheck(ctx, fullapi)
 	if err != nil {
@@ -78,7 +75,7 @@ func infoCmdAct(cctx *cli.Context) error {
 		fmt.Printf("%s (check %s)\n", color.RedString("⚠ %d Active alerts", len(activeAlerts)), color.YellowString("lotus log alerts"))
 	}
 
-	//Chain health calculated as percentage: amount of blocks in last finality / very healthy amount of blocks in a finality (900 epochs * 5 blocks per tipset)
+	// Chain health calculated as percentage: amount of blocks in last finality / very healthy amount of blocks in a finality (900 epochs * 5 blocks per tipset)
 	health := (100 * (900 * status.ChainStatus.BlocksPerTipsetLastFinality) / (900 * 5))
 	switch {
 	case health > 85:
@@ -131,9 +128,8 @@ func infoCmdAct(cctx *cli.Context) error {
 		if err != nil {
 			if strings.Contains(err.Error(), "actor not found") {
 				continue
-			} else {
-				return err
 			}
+			return err
 		}
 		mbLockedSum = big.Add(mbLockedSum, mbal.Locked)
 		mbAvailableSum = big.Add(mbAvailableSum, mbal.Escrow)
@@ -156,57 +152,6 @@ func infoCmdAct(cctx *cli.Context) error {
 		fmt.Printf("Payment Channels: %v channels\n", len(chs))
 	}
 	fmt.Println()
-
-	localDeals, err := fullapi.ClientListDeals(ctx)
-	if err != nil {
-		return err
-	}
-
-	var totalSize uint64
-	byState := map[storagemarket.StorageDealStatus][]uint64{}
-	for _, deal := range localDeals {
-		totalSize += deal.Size
-		byState[deal.State] = append(byState[deal.State], deal.Size)
-	}
-
-	fmt.Printf("Deals: %d, %s\n", len(localDeals), types.SizeStr(types.NewInt(totalSize)))
-
-	type stateStat struct {
-		state storagemarket.StorageDealStatus
-		count int
-		bytes uint64
-	}
-
-	stateStats := make([]stateStat, 0, len(byState))
-	for state, deals := range byState {
-		if state == storagemarket.StorageDealActive {
-			state = math.MaxUint64 // for sort
-		}
-
-		st := stateStat{
-			state: state,
-			count: len(deals),
-		}
-		for _, b := range deals {
-			st.bytes += b
-		}
-
-		stateStats = append(stateStats, st)
-	}
-
-	sort.Slice(stateStats, func(i, j int) bool {
-		return int64(stateStats[i].state) < int64(stateStats[j].state)
-	})
-
-	for _, st := range stateStats {
-		if st.state == math.MaxUint64 {
-			st.state = storagemarket.StorageDealActive
-		}
-		fmt.Printf("      %s: %d deals, %s\n", storagemarket.DealStates[st.state], st.count, types.SizeStr(types.NewInt(st.bytes)))
-	}
-
-	fmt.Println()
-
 	tw := tabwriter.NewWriter(os.Stdout, 6, 6, 2, ' ', 0)
 
 	s, err := fullapi.NetBandwidthStats(ctx)
@@ -215,10 +160,19 @@ func infoCmdAct(cctx *cli.Context) error {
 	}
 
 	fmt.Printf("Bandwidth:\n")
-	fmt.Fprintf(tw, "\tTotalIn\tTotalOut\tRateIn\tRateOut\n")
-	fmt.Fprintf(tw, "\t%s\t%s\t%s/s\t%s/s\n", humanize.Bytes(uint64(s.TotalIn)), humanize.Bytes(uint64(s.TotalOut)), humanize.Bytes(uint64(s.RateIn)), humanize.Bytes(uint64(s.RateOut)))
+	if _, err := fmt.Fprintf(tw, "\tTotalIn\tTotalOut\tRateIn\tRateOut\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		tw,
+		"\t%s\t%s\t%s/s\t%s/s\n",
+		humanize.Bytes(uint64(s.TotalIn)),
+		humanize.Bytes(uint64(s.TotalOut)),
+		humanize.Bytes(uint64(s.RateIn)),
+		humanize.Bytes(uint64(s.RateOut))); err != nil {
+		return err
+	}
 	return tw.Flush()
-
 }
 
 func SyncBasefeeCheck(ctx context.Context, fullapi v1api.FullNode) error {
@@ -228,12 +182,12 @@ func SyncBasefeeCheck(ctx context.Context, fullapi v1api.FullNode) error {
 	}
 
 	switch {
-	case time.Now().Unix()-int64(head.MinTimestamp()) < int64(build.BlockDelaySecs*3/2): // within 1.5 epochs
+	case time.Now().Unix()-int64(head.MinTimestamp()) < int64(buildconstants.BlockDelaySecs*3/2): // within 1.5 epochs
 		fmt.Printf("[%s]", color.GreenString("sync ok"))
-	case time.Now().Unix()-int64(head.MinTimestamp()) < int64(build.BlockDelaySecs*5): // within 5 epochs
-		fmt.Printf("[%s]", color.YellowString("sync slow (%s behind)", time.Now().Sub(time.Unix(int64(head.MinTimestamp()), 0)).Truncate(time.Second)))
+	case time.Now().Unix()-int64(head.MinTimestamp()) < int64(buildconstants.BlockDelaySecs*5): // within 5 epochs
+		fmt.Printf("[%s]", color.YellowString("sync slow (%s behind)", time.Since(time.Unix(int64(head.MinTimestamp()), 0)).Truncate(time.Second)))
 	default:
-		fmt.Printf("[%s]", color.RedString("sync behind! (%s behind)", time.Now().Sub(time.Unix(int64(head.MinTimestamp()), 0)).Truncate(time.Second)))
+		fmt.Printf("[%s]", color.RedString("sync behind! (%s behind)", time.Since(time.Unix(int64(head.MinTimestamp()), 0)).Truncate(time.Second)))
 	}
 	basefee := head.MinTicketBlock().ParentBaseFee
 	gasCol := []color.Attribute{color.FgBlue}

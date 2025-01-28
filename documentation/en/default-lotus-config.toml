@@ -128,46 +128,6 @@
   #TracerSourceAuth = ""
 
 
-[Client]
-  # type: bool
-  # env var: LOTUS_CLIENT_USEIPFS
-  #UseIpfs = false
-
-  # type: bool
-  # env var: LOTUS_CLIENT_IPFSONLINEMODE
-  #IpfsOnlineMode = false
-
-  # type: string
-  # env var: LOTUS_CLIENT_IPFSMADDR
-  #IpfsMAddr = ""
-
-  # type: bool
-  # env var: LOTUS_CLIENT_IPFSUSEFORRETRIEVAL
-  #IpfsUseForRetrieval = false
-
-  # The maximum number of simultaneous data transfers between the client
-  # and storage providers for storage deals
-  #
-  # type: uint64
-  # env var: LOTUS_CLIENT_SIMULTANEOUSTRANSFERSFORSTORAGE
-  #SimultaneousTransfersForStorage = 20
-
-  # The maximum number of simultaneous data transfers between the client
-  # and storage providers for retrieval deals
-  #
-  # type: uint64
-  # env var: LOTUS_CLIENT_SIMULTANEOUSTRANSFERSFORRETRIEVAL
-  #SimultaneousTransfersForRetrieval = 20
-
-  # Require that retrievals perform no on-chain operations. Paid retrievals
-  # without existing payment channels with available funds will fail instead
-  # of automatically performing on-chain operations.
-  #
-  # type: bool
-  # env var: LOTUS_CLIENT_OFFCHAINRETRIEVAL
-  #OffChainRetrieval = false
-
-
 [Wallet]
   # type: string
   # env var: LOTUS_WALLET_REMOTEBACKEND
@@ -261,90 +221,132 @@
 
 
 [Fevm]
-  # EnableEthRPC enables eth_ rpc, and enables storing a mapping of eth transaction hashes to filecoin message Cids.
-  # This will also enable the RealTimeFilterAPI and HistoricFilterAPI by default, but they can be disabled by config options above.
+  # EnableEthRPC enables eth_ RPC methods.
+  # Note: Setting this to true will also require that ChainIndexer is enabled, otherwise it will cause an error at startup.
+  # Set EnableIndexer in the ChainIndexer section of the config to true to enable the ChainIndexer.
   #
   # type: bool
   # env var: LOTUS_FEVM_ENABLEETHRPC
   #EnableEthRPC = false
 
-  # EthTxHashMappingLifetimeDays the transaction hash lookup database will delete mappings that have been stored for more than x days
-  # Set to 0 to keep all mappings
+  # EthTraceFilterMaxResults sets the maximum results returned per request by trace_filter
+  #
+  # type: uint64
+  # env var: LOTUS_FEVM_ETHTRACEFILTERMAXRESULTS
+  #EthTraceFilterMaxResults = 500
+
+  # EthBlkCacheSize specifies the size of the cache used for caching Ethereum blocks.
+  # This cache enhances the performance of the eth_getBlockByHash RPC call by minimizing the need to access chain state for
+  # recently requested blocks that are already cached.
+  # The default size of the cache is 500 blocks.
+  # Note: Setting this value to 0 disables the cache.
   #
   # type: int
-  # env var: LOTUS_FEVM_ETHTXHASHMAPPINGLIFETIMEDAYS
-  #EthTxHashMappingLifetimeDays = 0
-
-  [Fevm.Events]
-    # DisableRealTimeFilterAPI will disable the RealTimeFilterAPI that can create and query filters for actor events as they are emitted.
-    # The API is enabled when EnableEthRPC or Events.EnableActorEventsAPI is true, but can be disabled selectively with this flag.
-    #
-    # type: bool
-    # env var: LOTUS_FEVM_EVENTS_DISABLEREALTIMEFILTERAPI
-    #DisableRealTimeFilterAPI = false
-
-    # DisableHistoricFilterAPI will disable the HistoricFilterAPI that can create and query filters for actor events
-    # that occurred in the past. HistoricFilterAPI maintains a queryable index of events.
-    # The API is enabled when EnableEthRPC or Events.EnableActorEventsAPI is true, but can be disabled selectively with this flag.
-    #
-    # type: bool
-    # env var: LOTUS_FEVM_EVENTS_DISABLEHISTORICFILTERAPI
-    #DisableHistoricFilterAPI = false
-
-    # FilterTTL specifies the time to live for actor event filters. Filters that haven't been accessed longer than
-    # this time become eligible for automatic deletion.
-    #
-    # type: Duration
-    # env var: LOTUS_FEVM_EVENTS_FILTERTTL
-    #FilterTTL = "24h0m0s"
-
-    # MaxFilters specifies the maximum number of filters that may exist at any one time.
-    #
-    # type: int
-    # env var: LOTUS_FEVM_EVENTS_MAXFILTERS
-    #MaxFilters = 100
-
-    # MaxFilterResults specifies the maximum number of results that can be accumulated by an actor event filter.
-    #
-    # type: int
-    # env var: LOTUS_FEVM_EVENTS_MAXFILTERRESULTS
-    #MaxFilterResults = 10000
-
-    # MaxFilterHeightRange specifies the maximum range of heights that can be used in a filter (to avoid querying
-    # the entire chain)
-    #
-    # type: uint64
-    # env var: LOTUS_FEVM_EVENTS_MAXFILTERHEIGHTRANGE
-    #MaxFilterHeightRange = 2880
-
-    # DatabasePath is the full path to a sqlite database that will be used to index actor events to
-    # support the historic filter APIs. If the database does not exist it will be created. The directory containing
-    # the database must already exist and be writeable. If a relative path is provided here, sqlite treats it as
-    # relative to the CWD (current working directory).
-    #
-    # type: string
-    # env var: LOTUS_FEVM_EVENTS_DATABASEPATH
-    #DatabasePath = ""
+  # env var: LOTUS_FEVM_ETHBLKCACHESIZE
+  #EthBlkCacheSize = 500
 
 
 [Events]
   # EnableActorEventsAPI enables the Actor events API that enables clients to consume events
   # emitted by (smart contracts + built-in Actors).
-  # This will also enable the RealTimeFilterAPI and HistoricFilterAPI by default, but they can be
-  # disabled by setting their respective Disable* options in Fevm.Events.
+  # Note: Setting this to true will also require that ChainIndexer is enabled, otherwise it will cause an error at startup.
+  # Set EnableIndexer in the ChainIndexer section of the config to true to enable the ChainIndexer.
   #
   # type: bool
   # env var: LOTUS_EVENTS_ENABLEACTOREVENTSAPI
   #EnableActorEventsAPI = false
 
+  # FilterTTL specifies the time to live for actor event filters. Filters that haven't been accessed longer than
+  # this time become eligible for automatic deletion. Filters consume resources, so if they are unused they
+  # should not be retained.
+  #
+  # type: Duration
+  # env var: LOTUS_EVENTS_FILTERTTL
+  #FilterTTL = "1h0m0s"
 
-[Index]
-  # EXPERIMENTAL FEATURE. USE WITH CAUTION
-  # EnableMsgIndex enables indexing of messages on chain.
+  # MaxFilters specifies the maximum number of filters that may exist at any one time.
+  # Multi-tenant environments may want to increase this value to serve a larger number of clients. If using
+  # lotus-gateway, this global limit can be coupled with --eth-max-filters-per-conn which limits the number
+  # of filters per connection.
+  #
+  # type: int
+  # env var: LOTUS_EVENTS_MAXFILTERS
+  #MaxFilters = 100
+
+  # MaxFilterResults specifies the maximum number of results that can be accumulated by an actor event filter.
+  #
+  # type: int
+  # env var: LOTUS_EVENTS_MAXFILTERRESULTS
+  #MaxFilterResults = 10000
+
+  # MaxFilterHeightRange specifies the maximum range of heights that can be used in a filter (to avoid querying
+  # the entire chain)
+  #
+  # type: uint64
+  # env var: LOTUS_EVENTS_MAXFILTERHEIGHTRANGE
+  #MaxFilterHeightRange = 2880
+
+
+[ChainIndexer]
+  # EnableIndexer controls whether the chain indexer is active.
+  # The chain indexer is responsible for indexing tipsets, messages, and events from the chain state.
+  # It is a crucial component for optimizing Lotus RPC response times.
+  # 
+  # Default: false (indexer is disabled)
+  # 
+  # Setting this to true will enable the indexer, which will significantly improve RPC performance.
+  # It is strongly recommended to keep this set to true if you are an RPC provider.
+  # 
+  # If EnableEthRPC or EnableActorEventsAPI are set to true, the ChainIndexer must be enabled using
+  # this option to avoid errors at startup.
   #
   # type: bool
-  # env var: LOTUS_INDEX_ENABLEMSGINDEX
-  #EnableMsgIndex = false
+  # env var: LOTUS_CHAININDEXER_ENABLEINDEXER
+  #EnableIndexer = false
+
+  # GCRetentionEpochs specifies the number of epochs for which data is retained in the Indexer.
+  # The garbage collection (GC) process removes data older than this retention period.
+  # Setting this to 0 disables GC, preserving all historical data indefinitely.
+  # 
+  # If set, the minimum value must be greater than builtin.EpochsInDay (i.e. "2880" epochs for mainnet).
+  # This ensures a reasonable retention period for the indexed data.
+  # 
+  # Default: 0 (GC disabled)
+  #
+  # type: int64
+  # env var: LOTUS_CHAININDEXER_GCRETENTIONEPOCHS
+  #GCRetentionEpochs = 0
+
+  # ReconcileEmptyIndex determines whether to reconcile the index with the chain state
+  # during startup when the index is empty.
+  # 
+  # When set to true:
+  # - On startup, if the index is empty, the indexer will index the available
+  # chain state on the node albeit within the MaxReconcileTipsets limit.
+  # 
+  # When set to false:
+  # - The indexer will not automatically re-index the chain state on startup if the index is empty.
+  # 
+  # Default: false
+  # 
+  # Note: The number of tipsets reconciled (i.e. indexed) during this process can be
+  # controlled using the MaxReconcileTipsets option.
+  #
+  # type: bool
+  # env var: LOTUS_CHAININDEXER_RECONCILEEMPTYINDEX
+  #ReconcileEmptyIndex = false
+
+  # MaxReconcileTipsets limits the number of tipsets to reconcile with the chain during startup.
+  # It represents the maximum number of tipsets to index from the chain state that are absent in the index.
+  # 
+  # Default: 3 * epochsPerDay (approximately 3 days of chain history)
+  # 
+  # Note: Setting this value too low may result in incomplete indexing, while setting it too high
+  # may increase startup time.
+  #
+  # type: uint64
+  # env var: LOTUS_CHAININDEXER_MAXRECONCILETIPSETS
+  #MaxReconcileTipsets = 8640
 
 
 [FaultReporter]
@@ -374,5 +376,4 @@
   # type: string
   # env var: LOTUS_FAULTREPORTER_CONSENSUSFAULTREPORTERADDRESS
   #ConsensusFaultReporterAddress = ""
-
 

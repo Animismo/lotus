@@ -23,23 +23,24 @@ import (
 	msig2 "github.com/filecoin-project/specs-actors/v2/actors/builtin/multisig"
 
 	"github.com/filecoin-project/lotus/blockstore"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/multisig"
+	"github.com/filecoin-project/lotus/chain/actors/policy"
 	"github.com/filecoin-project/lotus/chain/consensus"
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
-var multisigCmd = &cli.Command{
+var MultisigCmd = &cli.Command{
 	Name:  "msig",
 	Usage: "Interact with a multisig wallet",
 	Flags: []cli.Flag{
 		&cli.IntFlag{
 			Name:  "confidence",
 			Usage: "number of block confirmations to wait for",
-			Value: int(build.MessageConfidence),
+			Value: int(buildconstants.MessageConfidence),
 		},
 	},
 	Subcommands: []*cli.Command{
@@ -161,14 +162,14 @@ var msigCreateCmd = &cli.Command{
 		fmt.Println("waiting for confirmation..")
 
 		// wait for it to get mined into a block
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
 
 		// check it executed successfully
 		if wait.Receipt.ExitCode.IsError() {
-			fmt.Fprintln(cctx.App.Writer, "actor creation failed!")
+			_, _ = fmt.Fprintln(cctx.App.Writer, "actor creation failed!")
 			return err
 		}
 
@@ -178,7 +179,7 @@ var msigCreateCmd = &cli.Command{
 		if err := execreturn.UnmarshalCBOR(bytes.NewReader(wait.Receipt.Return)); err != nil {
 			return err
 		}
-		fmt.Fprintln(cctx.App.Writer, "Created new multisig: ", execreturn.IDAddress, execreturn.RobustAddress)
+		_, _ = fmt.Fprintln(cctx.App.Writer, "Created new multisig: ", execreturn.IDAddress, execreturn.RobustAddress)
 
 		// TODO: maybe register this somewhere
 		return nil
@@ -242,25 +243,25 @@ var msigInspectCmd = &cli.Command{
 			return err
 		}
 
-		fmt.Fprintf(cctx.App.Writer, "Balance: %s\n", types.FIL(act.Balance))
-		fmt.Fprintf(cctx.App.Writer, "Spendable: %s\n", types.FIL(types.BigSub(act.Balance, locked)))
+		_, _ = fmt.Fprintf(cctx.App.Writer, "Balance: %s\n", types.FIL(act.Balance))
+		_, _ = fmt.Fprintf(cctx.App.Writer, "Spendable: %s\n", types.FIL(types.BigSub(act.Balance, locked)))
 
 		if cctx.Bool("vesting") {
 			ib, err := mstate.InitialBalance()
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cctx.App.Writer, "InitialBalance: %s\n", types.FIL(ib))
+			_, _ = fmt.Fprintf(cctx.App.Writer, "InitialBalance: %s\n", types.FIL(ib))
 			se, err := mstate.StartEpoch()
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cctx.App.Writer, "StartEpoch: %d\n", se)
+			_, _ = fmt.Fprintf(cctx.App.Writer, "StartEpoch: %d\n", se)
 			ud, err := mstate.UnlockDuration()
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cctx.App.Writer, "UnlockDuration: %d\n", ud)
+			_, _ = fmt.Fprintf(cctx.App.Writer, "UnlockDuration: %d\n", ud)
 		}
 
 		signers, err := mstate.Signers()
@@ -271,17 +272,17 @@ var msigInspectCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cctx.App.Writer, "Threshold: %d / %d\n", threshold, len(signers))
-		fmt.Fprintln(cctx.App.Writer, "Signers:")
+		_, _ = fmt.Fprintf(cctx.App.Writer, "Threshold: %d / %d\n", threshold, len(signers))
+		_, _ = fmt.Fprintln(cctx.App.Writer, "Signers:")
 
 		signerTable := tabwriter.NewWriter(cctx.App.Writer, 8, 4, 2, ' ', 0)
-		fmt.Fprintf(signerTable, "ID\tAddress\n")
+		_, _ = fmt.Fprintf(signerTable, "ID\tAddress\n")
 		for _, s := range signers {
 			signerActor, err := api.StateAccountKey(ctx, s, types.EmptyTSK)
 			if err != nil {
-				fmt.Fprintf(signerTable, "%s\t%s\n", s, "N/A")
+				_, _ = fmt.Fprintf(signerTable, "%s\t%s\n", s, "N/A")
 			} else {
-				fmt.Fprintf(signerTable, "%s\t%s\n", s, signerActor)
+				_, _ = fmt.Fprintf(signerTable, "%s\t%s\n", s, signerActor)
 			}
 		}
 		if err := signerTable.Flush(); err != nil {
@@ -297,7 +298,7 @@ var msigInspectCmd = &cli.Command{
 		}
 
 		decParams := cctx.Bool("decode-params")
-		fmt.Fprintln(cctx.App.Writer, "Transactions: ", len(pending))
+		_, _ = fmt.Fprintln(cctx.App.Writer, "Transactions: ", len(pending))
 		if len(pending) > 0 {
 			var txids []int64
 			for txid := range pending {
@@ -308,7 +309,7 @@ var msigInspectCmd = &cli.Command{
 			})
 
 			w := tabwriter.NewWriter(cctx.App.Writer, 8, 4, 2, ' ', 0)
-			fmt.Fprintf(w, "ID\tState\tApprovals\tTo\tValue\tMethod\tParams\n")
+			_, _ = fmt.Fprintf(w, "ID\tState\tApprovals\tTo\tValue\tMethod\tParams\n")
 			for _, txid := range txids {
 				tx := pending[txid]
 				target := tx.To.String()
@@ -320,9 +321,31 @@ var msigInspectCmd = &cli.Command{
 
 				if err != nil {
 					if tx.Method == 0 {
-						fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n", txid, "pending", len(tx.Approved), target, types.FIL(tx.Value), "Send", tx.Method, paramStr)
+						_, _ = fmt.Fprintf(
+							w,
+							"%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n",
+							txid,
+							"pending",
+							len(tx.Approved),
+							target,
+							types.FIL(tx.Value),
+							"Send",
+							tx.Method,
+							paramStr,
+						)
 					} else {
-						fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n", txid, "pending", len(tx.Approved), target, types.FIL(tx.Value), "new account, unknown method", tx.Method, paramStr)
+						_, _ = fmt.Fprintf(
+							w,
+							"%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n",
+							txid,
+							"pending",
+							len(tx.Approved),
+							target,
+							types.FIL(tx.Value),
+							"new account, unknown method",
+							tx.Method,
+							paramStr,
+						)
 					}
 				} else {
 					method := consensus.NewActorRegistry().Methods[targAct.Code][tx.Method] // TODO: use remote map
@@ -341,7 +364,18 @@ var msigInspectCmd = &cli.Command{
 						paramStr = string(b)
 					}
 
-					fmt.Fprintf(w, "%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n", txid, "pending", len(tx.Approved), target, types.FIL(tx.Value), method.Name, tx.Method, paramStr)
+					_, _ = fmt.Fprintf(
+						w,
+						"%d\t%s\t%d\t%s\t%s\t%s(%d)\t%s\n",
+						txid,
+						"pending",
+						len(tx.Approved),
+						target,
+						types.FIL(tx.Value),
+						method.Name,
+						tx.Method,
+						paramStr,
+					)
 				}
 			}
 			if err := w.Flush(); err != nil {
@@ -451,7 +485,7 @@ var msigProposeCmd = &cli.Command{
 
 		fmt.Println("sent proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -492,11 +526,11 @@ var msigApproveCmd = &cli.Command{
 		}
 
 		if cctx.NArg() > 2 && cctx.NArg() < 5 {
-			return ShowHelp(cctx, fmt.Errorf("usage: msig approve <msig addr> <message ID> <proposer address> <desination> <value>"))
+			return ShowHelp(cctx, fmt.Errorf("usage: msig approve <msig addr> <message ID> <proposer address> <destination> <value>"))
 		}
 
 		if cctx.NArg() > 5 && cctx.NArg() != 7 {
-			return ShowHelp(cctx, fmt.Errorf("usage: msig approve <msig addr> <message ID> <proposer address> <desination> <value> [ <method> <params> ]"))
+			return ShowHelp(cctx, fmt.Errorf("usage: msig approve <msig addr> <message ID> <proposer address> <destination> <value> [ <method> <params> ]"))
 		}
 
 		srv, err := GetFullNodeServices(cctx)
@@ -600,7 +634,7 @@ var msigApproveCmd = &cli.Command{
 
 		fmt.Println("sent approval in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -629,11 +663,11 @@ var msigCancelCmd = &cli.Command{
 		}
 
 		if cctx.NArg() > 2 && cctx.NArg() < 4 {
-			return ShowHelp(cctx, fmt.Errorf("usage: msig cancel <msig addr> <message ID> <desination> <value>"))
+			return ShowHelp(cctx, fmt.Errorf("usage: msig cancel <msig addr> <message ID> <destination> <value>"))
 		}
 
 		if cctx.NArg() > 4 && cctx.NArg() != 6 {
-			return ShowHelp(cctx, fmt.Errorf("usage: msig cancel <msig addr> <message ID> <desination> <value> [ <method> <params> ]"))
+			return ShowHelp(cctx, fmt.Errorf("usage: msig cancel <msig addr> <message ID> <destination> <value> [ <method> <params> ]"))
 		}
 
 		srv, err := GetFullNodeServices(cctx)
@@ -725,7 +759,7 @@ var msigCancelCmd = &cli.Command{
 
 		fmt.Println("sent cancel in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -805,7 +839,7 @@ var msigRemoveProposeCmd = &cli.Command{
 
 		fmt.Println("sent remove proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -923,9 +957,9 @@ var msigAddProposeCmd = &cli.Command{
 
 		msgCid := sm.Cid()
 
-		fmt.Fprintln(cctx.App.Writer, "sent add proposal in message: ", msgCid)
+		_, _ = fmt.Fprintln(cctx.App.Writer, "sent add proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1016,7 +1050,7 @@ var msigAddApproveCmd = &cli.Command{
 
 		fmt.Println("sent add approval in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1102,7 +1136,7 @@ var msigAddCancelCmd = &cli.Command{
 
 		fmt.Println("sent add cancellation in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1183,7 +1217,7 @@ var msigSwapProposeCmd = &cli.Command{
 
 		fmt.Println("sent swap proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1274,7 +1308,7 @@ var msigSwapApproveCmd = &cli.Command{
 
 		fmt.Println("sent swap approval in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1360,7 +1394,7 @@ var msigSwapCancelCmd = &cli.Command{
 
 		fmt.Println("sent swap cancellation in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1456,7 +1490,7 @@ var msigLockProposeCmd = &cli.Command{
 
 		fmt.Println("sent lock proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1562,7 +1596,7 @@ var msigLockApproveCmd = &cli.Command{
 
 		fmt.Println("sent lock approval in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1663,7 +1697,7 @@ var msigLockCancelCmd = &cli.Command{
 
 		fmt.Println("sent lock cancellation in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}
@@ -1809,7 +1843,7 @@ var msigProposeThresholdCmd = &cli.Command{
 
 		fmt.Println("sent change threshold proposal in message: ", msgCid)
 
-		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), build.Finality, true)
+		wait, err := api.StateWaitMsg(ctx, msgCid, uint64(cctx.Int("confidence")), policy.ChainFinality, true)
 		if err != nil {
 			return err
 		}

@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/namespace"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -17,10 +15,8 @@ import (
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/go-fil-markets/discovery"
-	discoveryimpl "github.com/filecoin-project/go-fil-markets/discovery/impl"
-
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain"
 	"github.com/filecoin-project/lotus/chain/beacon"
 	"github.com/filecoin-project/lotus/chain/beacon/drand"
@@ -34,9 +30,7 @@ import (
 	"github.com/filecoin-project/lotus/journal"
 	"github.com/filecoin-project/lotus/journal/fsjournal"
 	"github.com/filecoin-project/lotus/lib/peermgr"
-	marketevents "github.com/filecoin-project/lotus/markets/loggers"
 	"github.com/filecoin-project/lotus/node/hello"
-	"github.com/filecoin-project/lotus/node/impl/full"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/helpers"
 	"github.com/filecoin-project/lotus/node/repo"
@@ -98,7 +92,7 @@ func RunChainExchange(h host.Host, svc exchange.Server) {
 }
 
 func waitForSync(stmgr *stmgr.StateManager, epochs int, subscribe func()) {
-	nearsync := time.Duration(epochs*int(build.BlockDelaySecs)) * time.Second
+	nearsync := time.Duration(epochs*int(buildconstants.BlockDelaySecs)) * time.Second
 
 	// early check, are we synced at start up?
 	ts := stmgr.ChainStore().GetHeaviestTipSet()
@@ -194,54 +188,6 @@ func HandleIncomingMessages(mctx helpers.MetricsCtx, lc fx.Lifecycle, ps *pubsub
 	waitForSync(stmgr, pubsubMsgsSyncEpochs, subscribe)
 }
 
-func RelayIndexerMessages(lc fx.Lifecycle, ps *pubsub.PubSub, nn dtypes.NetworkName, h host.Host, chainModule full.ChainModuleAPI, stateModule full.StateModuleAPI) error {
-	topicName := build.IndexerIngestTopic(nn)
-
-	v := sub.NewIndexerMessageValidator(h.ID(), chainModule, stateModule)
-
-	if err := ps.RegisterTopicValidator(topicName, v.Validate); err != nil {
-		return xerrors.Errorf("failed to register validator for topic %s, err: %w", topicName, err)
-	}
-
-	topicHandle, err := ps.Join(topicName)
-	if err != nil {
-		return xerrors.Errorf("failed to join pubsub topic %s: %w", topicName, err)
-	}
-	cancelFunc, err := topicHandle.Relay()
-	if err != nil {
-		return xerrors.Errorf("failed to relay to pubsub messages for topic %s: %w", topicName, err)
-	}
-
-	// Cancel message relay on shutdown.
-	lc.Append(fx.Hook{
-		OnStop: func(_ context.Context) error {
-			cancelFunc()
-			return nil
-		},
-	})
-
-	log.Infof("relaying messages for pubsub topic %s", topicName)
-	return nil
-}
-
-func NewLocalDiscovery(lc fx.Lifecycle, ds dtypes.MetadataDS) (*discoveryimpl.Local, error) {
-	local, err := discoveryimpl.NewLocal(namespace.Wrap(ds, datastore.NewKey("/deals/local")))
-	if err != nil {
-		return nil, err
-	}
-	local.OnReady(marketevents.ReadyLogger("discovery"))
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			return local.Start(ctx)
-		},
-	})
-	return local, nil
-}
-
-func RetrievalResolver(l *discoveryimpl.Local) discovery.PeerResolver {
-	return discoveryimpl.Multi(l)
-}
-
 type RandomBeaconParams struct {
 	fx.In
 
@@ -251,7 +197,7 @@ type RandomBeaconParams struct {
 }
 
 func BuiltinDrandConfig() dtypes.DrandSchedule {
-	return build.DrandConfigSchedule()
+	return buildconstants.DrandConfigSchedule()
 }
 
 func RandomSchedule(lc fx.Lifecycle, mctx helpers.MetricsCtx, p RandomBeaconParams, _ dtypes.AfterGenesisSet) (beacon.Schedule, error) {

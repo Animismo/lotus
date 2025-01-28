@@ -34,7 +34,7 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// Check that the node is still working. That is, that it's still processing the chain.
+// NewLiveHandler checks that the node is still working. That is, that it's still processing the chain.
 // If there have been no recent changes, consider the node to be dead.
 func NewLiveHandler(api lapi.FullNode) *HealthHandler {
 	ctx := context.Background()
@@ -48,7 +48,7 @@ func NewLiveHandler(api lapi.FullNode) *HealthHandler {
 		var (
 			countdown int32
 			headCh    <-chan []*lapi.HeadChange
-			backoff   time.Duration = minbackoff
+			backoff   = minbackoff
 			err       error
 		)
 		minutely := time.NewTicker(time.Minute)
@@ -66,10 +66,9 @@ func NewLiveHandler(api lapi.FullNode) *HealthHandler {
 					}
 					backoff = nextbackoff
 					continue
-				} else {
-					healthlog.Infof("started ChainNotify channel")
-					backoff = minbackoff
 				}
+				healthlog.Infof("started ChainNotify channel")
+				backoff = minbackoff
 			}
 			select {
 			case <-minutely.C:
@@ -91,7 +90,7 @@ func NewLiveHandler(api lapi.FullNode) *HealthHandler {
 	return &h
 }
 
-// Check if we are ready to handle traffic.
+// NewReadyHandler checks if we are ready to handle traffic.
 // 1. sync workers are reasonably up to date.
 // 2. libp2p is servicable
 func NewReadyHandler(api lapi.FullNode) *HealthHandler {

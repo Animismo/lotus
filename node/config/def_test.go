@@ -1,4 +1,3 @@
-// stm: #unit
 package config
 
 import (
@@ -13,7 +12,6 @@ import (
 )
 
 func TestDefaultFullNodeRoundtrip(t *testing.T) {
-	//stm: @OTHER_IMPLEMENTATION_001
 	c := DefaultFullNode()
 
 	var s string
@@ -53,7 +51,6 @@ func TestDefaultFullNodeCommentRoundtrip(t *testing.T) {
 }
 
 func TestDefaultMinerRoundtrip(t *testing.T) {
-	//stm: @OTHER_IMPLEMENTATION_001
 	c := DefaultStorageMiner()
 
 	var s string
@@ -69,19 +66,5 @@ func TestDefaultMinerRoundtrip(t *testing.T) {
 	c2, err := FromReader(strings.NewReader(s), DefaultStorageMiner())
 	require.NoError(t, err)
 
-	fmt.Println(s)
-
-	// Differs between test envs
-	c.HarmonyDB = HarmonyDB{}
-	c2.(*StorageMiner).HarmonyDB = HarmonyDB{}
-
-	fmt.Println(c)
-	fmt.Println(c2)
 	require.True(t, reflect.DeepEqual(c, c2))
-}
-
-func TestDefaultStorageMiner_IsEmpty(t *testing.T) {
-	subject := DefaultStorageMiner()
-	require.True(t, subject.IndexProvider.Enable)
-	require.Equal(t, "", subject.IndexProvider.TopicName)
 }

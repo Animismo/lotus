@@ -10,10 +10,11 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/go-state-types/network"
 	msig0 "github.com/filecoin-project/specs-actors/actors/builtin/multisig"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
 	_init "github.com/filecoin-project/lotus/chain/actors/builtin/init"
@@ -130,11 +131,11 @@ func (sm *StateManager) setupPostIgnitionVesting(ctx context.Context) error {
 	for k, v := range totalsByEpoch {
 		ns := msig0.State{
 			// In the pre-ignition logic, we incorrectly set this value in Fil, not attoFil, an off-by-10^18 error
-			InitialBalance: big.Mul(v, big.NewInt(int64(build.FilecoinPrecision))),
+			InitialBalance: big.Mul(v, big.NewInt(int64(buildconstants.FilecoinPrecision))),
 			UnlockDuration: k,
 			PendingTxns:    cid.Undef,
 			// In the pre-ignition logic, the start epoch was 0. This changes in the fork logic of the Ignition upgrade itself.
-			StartEpoch: build.UpgradeLiftoffHeight,
+			StartEpoch: buildconstants.UpgradeLiftoffHeight,
 		}
 		sm.postIgnitionVesting = append(sm.postIgnitionVesting, ns)
 	}
@@ -182,10 +183,10 @@ func (sm *StateManager) setupPostCalicoVesting(ctx context.Context) error {
 	sm.postCalicoVesting = make([]msig0.State, 0, len(totalsByEpoch))
 	for k, v := range totalsByEpoch {
 		ns := msig0.State{
-			InitialBalance: big.Mul(v, big.NewInt(int64(build.FilecoinPrecision))),
+			InitialBalance: big.Mul(v, big.NewInt(int64(buildconstants.FilecoinPrecision))),
 			UnlockDuration: k,
 			PendingTxns:    cid.Undef,
-			StartEpoch:     build.UpgradeLiftoffHeight,
+			StartEpoch:     buildconstants.UpgradeLiftoffHeight,
 		}
 		sm.postCalicoVesting = append(sm.postCalicoVesting, ns)
 	}
@@ -193,7 +194,7 @@ func (sm *StateManager) setupPostCalicoVesting(ctx context.Context) error {
 	return nil
 }
 
-// GetVestedFunds returns all funds that have "left" actors that are in the genesis state:
+// GetFilVested returns all funds that have "left" actors that are in the genesis state:
 // - For Multisigs, it counts the actual amounts that have vested at the given epoch
 // - For Accounts, it counts max(currentBalance - genesisBalance, 0).
 func (sm *StateManager) GetFilVested(ctx context.Context, height abi.ChainEpoch) (abi.TokenAmount, error) {
@@ -221,12 +222,12 @@ func (sm *StateManager) GetFilVested(ctx context.Context, height abi.ChainEpoch)
 		}
 	}
 
-	if height <= build.UpgradeIgnitionHeight {
+	if height <= buildconstants.UpgradeIgnitionHeight {
 		for _, v := range sm.preIgnitionVesting {
 			au := big.Sub(v.InitialBalance, v.AmountLocked(height))
 			vf = big.Add(vf, au)
 		}
-	} else if height <= build.UpgradeCalicoHeight {
+	} else if height <= buildconstants.UpgradeCalicoHeight {
 		for _, v := range sm.postIgnitionVesting {
 			// In the pre-ignition logic, we simply called AmountLocked(height), assuming startEpoch was 0.
 			// The start epoch changed in the Ignition upgrade.
@@ -243,7 +244,7 @@ func (sm *StateManager) GetFilVested(ctx context.Context, height abi.ChainEpoch)
 	}
 
 	// After UpgradeAssemblyHeight these funds are accounted for in GetFilReserveDisbursed
-	if height <= build.UpgradeAssemblyHeight {
+	if height <= buildconstants.UpgradeAssemblyHeight {
 		// continue to use preIgnitionGenInfos, nothing changed at the Ignition epoch
 		vf = big.Add(vf, sm.genesisPledge)
 	}
@@ -258,7 +259,7 @@ func GetFilReserveDisbursed(ctx context.Context, st *state.StateTree) (abi.Token
 	}
 
 	// If money enters the reserve actor, this could lead to a negative term
-	return big.Sub(big.NewFromGo(build.InitialFilReserved), ract.Balance), nil
+	return big.Sub(big.NewFromGo(buildconstants.InitialFilReserved), ract.Balance), nil
 }
 
 func GetFilMined(ctx context.Context, st *state.StateTree) (abi.TokenAmount, error) {
@@ -303,7 +304,10 @@ func getFilPowerLocked(ctx context.Context, st *state.StateTree) (abi.TokenAmoun
 	return pst.TotalLocked()
 }
 
-func GetFilLocked(ctx context.Context, st *state.StateTree) (abi.TokenAmount, error) {
+func GetFilLocked(ctx context.Context, st *state.StateTree, nv network.Version) (abi.TokenAmount, error) {
+	if nv >= network.Version23 {
+		return getFilPowerLocked(ctx, st)
+	}
 
 	filMarketLocked, err := getFilMarketLocked(ctx, st)
 	if err != nil {
@@ -337,13 +341,14 @@ func (sm *StateManager) GetVMCirculatingSupply(ctx context.Context, height abi.C
 }
 
 func (sm *StateManager) GetVMCirculatingSupplyDetailed(ctx context.Context, height abi.ChainEpoch, st *state.StateTree) (api.CirculatingSupply, error) {
+	nv := sm.GetNetworkVersion(ctx, height)
 	filVested, err := sm.GetFilVested(ctx, height)
 	if err != nil {
 		return api.CirculatingSupply{}, xerrors.Errorf("failed to calculate filVested: %w", err)
 	}
 
 	filReserveDisbursed := big.Zero()
-	if height > build.UpgradeAssemblyHeight {
+	if height > buildconstants.UpgradeAssemblyHeight {
 		filReserveDisbursed, err = GetFilReserveDisbursed(ctx, st)
 		if err != nil {
 			return api.CirculatingSupply{}, xerrors.Errorf("failed to calculate filReserveDisbursed: %w", err)
@@ -360,7 +365,7 @@ func (sm *StateManager) GetVMCirculatingSupplyDetailed(ctx context.Context, heig
 		return api.CirculatingSupply{}, xerrors.Errorf("failed to calculate filBurnt: %w", err)
 	}
 
-	filLocked, err := GetFilLocked(ctx, st)
+	filLocked, err := GetFilLocked(ctx, st, nv)
 	if err != nil {
 		return api.CirculatingSupply{}, xerrors.Errorf("failed to calculate filLocked: %w", err)
 	}
@@ -387,6 +392,8 @@ func (sm *StateManager) GetVMCirculatingSupplyDetailed(ctx context.Context, heig
 func (sm *StateManager) GetCirculatingSupply(ctx context.Context, height abi.ChainEpoch, st *state.StateTree) (abi.TokenAmount, error) {
 	circ := big.Zero()
 	unCirc := big.Zero()
+	nv := sm.GetNetworkVersion(ctx, height)
+
 	err := st.ForEach(func(a address.Address, actor *types.Actor) error {
 		// this can be a lengthy operation, we need to cancel early when
 		// the context is cancelled to avoid resource exhaustion
@@ -410,23 +417,28 @@ func (sm *StateManager) GetCirculatingSupply(ctx context.Context, height abi.Cha
 			a == builtin.BurntFundsActorAddr ||
 			a == builtin.SaftAddress ||
 			a == builtin.ReserveAddress ||
-			a == builtin.EthereumAddressManagerActorAddr:
+			a == builtin.EthereumAddressManagerActorAddr ||
+			a == builtin.DatacapActorAddr:
 
 			unCirc = big.Add(unCirc, actor.Balance)
 
 		case a == market.Address:
-			mst, err := market.Load(sm.cs.ActorStore(ctx), actor)
-			if err != nil {
-				return err
-			}
+			if nv >= network.Version23 {
+				circ = big.Add(circ, actor.Balance)
+			} else {
+				mst, err := market.Load(sm.cs.ActorStore(ctx), actor)
+				if err != nil {
+					return err
+				}
 
-			lb, err := mst.TotalLocked()
-			if err != nil {
-				return err
-			}
+				lb, err := mst.TotalLocked()
+				if err != nil {
+					return err
+				}
 
-			circ = big.Add(circ, big.Sub(actor.Balance, lb))
-			unCirc = big.Add(unCirc, lb)
+				circ = big.Add(circ, big.Sub(actor.Balance, lb))
+				unCirc = big.Add(unCirc, lb)
+			}
 
 		case builtin.IsAccountActor(actor.Code) ||
 			builtin.IsPaymentChannelActor(actor.Code) ||

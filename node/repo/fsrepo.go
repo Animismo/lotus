@@ -37,7 +37,7 @@ const (
 	fsDatastore     = "datastore"
 	fsLock          = "repo.lock"
 	fsKeystore      = "keystore"
-	fsSqlite        = "sqlite"
+	fsChainIndex    = "chainindex"
 )
 
 func NewRepoTypeFromString(t string) RepoType {
@@ -74,11 +74,6 @@ type RepoType interface {
 	APIInfoEnvVars() (string, []string, []string)
 }
 
-// SupportsStagingDeals is a trait for services that support staging deals
-type SupportsStagingDeals interface {
-	SupportsStagingDeals()
-}
-
 var FullNode fullNode
 
 type fullNode struct {
@@ -108,8 +103,6 @@ var StorageMiner storageMiner
 
 type storageMiner struct{}
 
-func (storageMiner) SupportsStagingDeals() {}
-
 func (storageMiner) Type() string {
 	return "StorageMiner"
 }
@@ -129,35 +122,6 @@ func (storageMiner) RepoFlags() []string {
 func (storageMiner) APIInfoEnvVars() (primary string, fallbacks []string, deprecated []string) {
 	// TODO remove deprecated deprecation period
 	return "MINER_API_INFO", nil, []string{"STORAGE_API_INFO"}
-}
-
-var Markets markets
-
-type markets struct{}
-
-func (markets) SupportsStagingDeals() {}
-
-func (markets) Type() string {
-	return "Markets"
-}
-
-func (markets) Config() interface{} {
-	return config.DefaultStorageMiner()
-}
-
-func (markets) APIFlags() []string {
-	// support split markets-miner and monolith deployments.
-	return []string{"markets-api-url", "miner-api-url"}
-}
-
-func (markets) RepoFlags() []string {
-	// support split markets-miner and monolith deployments.
-	return []string{"markets-repo", "miner-repo"}
-}
-
-func (markets) APIInfoEnvVars() (primary string, fallbacks []string, deprecated []string) {
-	// support split markets-miner and monolith deployments.
-	return "MARKETS_API_INFO", []string{"MINER_API_INFO"}, nil
 }
 
 type worker struct {
@@ -183,30 +147,6 @@ func (worker) RepoFlags() []string {
 
 func (worker) APIInfoEnvVars() (primary string, fallbacks []string, deprecated []string) {
 	return "WORKER_API_INFO", nil, nil
-}
-
-type curio struct{}
-
-var Curio curio
-
-func (curio) Type() string {
-	return "Curio"
-}
-
-func (curio) Config() interface{} {
-	return &struct{}{}
-}
-
-func (curio) APIFlags() []string {
-	return []string{"curio-api-url"}
-}
-
-func (curio) RepoFlags() []string {
-	return []string{"curio-repo"}
-}
-
-func (curio) APIInfoEnvVars() (primary string, fallbacks []string, deprecated []string) {
-	return "CURIO_API_INFO", nil, nil
 }
 
 var Wallet wallet
@@ -288,7 +228,7 @@ func (fsr *FsRepo) Init(t RepoType) error {
 	}
 
 	log.Infof("Initializing repo at '%s'", fsr.path)
-	err = os.MkdirAll(fsr.path, 0755) //nolint: gosec
+	err = os.MkdirAll(fsr.path, 0755)
 	if err != nil && !os.IsExist(err) {
 		return err
 	}
@@ -407,7 +347,7 @@ func (fsr *FsRepo) Lock(repoType RepoType) (LockedRepo, error) {
 	}, nil
 }
 
-// Like Lock, except datastores will work in read-only mode
+// LockRO is like Lock, except datastores will work in read-only mode
 func (fsr *FsRepo) LockRO(repoType RepoType) (LockedRepo, error) {
 	lr, err := fsr.Lock(repoType)
 	if err != nil {
@@ -436,9 +376,9 @@ type fsLockedRepo struct {
 	ssErr  error
 	ssOnce sync.Once
 
-	sqlPath string
-	sqlErr  error
-	sqlOnce sync.Once
+	chainIndexPath string
+	chainIndexErr  error
+	chainIndexOnce sync.Once
 
 	storageLk sync.Mutex
 	configLk  sync.Mutex
@@ -533,19 +473,19 @@ func (fsr *fsLockedRepo) SplitstorePath() (string, error) {
 	return fsr.ssPath, fsr.ssErr
 }
 
-func (fsr *fsLockedRepo) SqlitePath() (string, error) {
-	fsr.sqlOnce.Do(func() {
-		path := fsr.join(fsSqlite)
+func (fsr *fsLockedRepo) ChainIndexPath() (string, error) {
+	fsr.chainIndexOnce.Do(func() {
+		path := fsr.join(fsChainIndex)
 
 		if err := os.MkdirAll(path, 0755); err != nil {
-			fsr.sqlErr = err
+			fsr.chainIndexErr = err
 			return
 		}
 
-		fsr.sqlPath = path
+		fsr.chainIndexPath = path
 	})
 
-	return fsr.sqlPath, fsr.sqlErr
+	return fsr.chainIndexPath, fsr.chainIndexErr
 }
 
 // join joins path elements with fsr.path

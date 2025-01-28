@@ -11,6 +11,7 @@ import (
 	rpcmetrics "github.com/filecoin-project/go-jsonrpc/metrics"
 
 	"github.com/filecoin-project/lotus/blockstore"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 )
 
 // Distribution
@@ -30,6 +31,7 @@ var (
 	Version, _     = tag.NewKey("version")
 	Commit, _      = tag.NewKey("commit")
 	NodeType, _    = tag.NewKey("node_type")
+	Network, _     = tag.NewKey("network")
 	PeerID, _      = tag.NewKey("peer_id")
 	MinerID, _     = tag.NewKey("miner_id")
 	FailureType, _ = tag.NewKey("failure_type")
@@ -73,22 +75,6 @@ var (
 	LotusInfo          = stats.Int64("info", "Arbitrary counter to tag lotus info to", stats.UnitDimensionless)
 	PeerCount          = stats.Int64("peer/count", "Current number of FIL peers", stats.UnitDimensionless)
 	APIRequestDuration = stats.Float64("api/request_duration_ms", "Duration of API requests", stats.UnitMilliseconds)
-
-	// graphsync
-
-	GraphsyncReceivingPeersCount              = stats.Int64("graphsync/receiving_peers", "number of peers we are receiving graphsync data from", stats.UnitDimensionless)
-	GraphsyncReceivingActiveCount             = stats.Int64("graphsync/receiving_active", "number of active receiving graphsync transfers", stats.UnitDimensionless)
-	GraphsyncReceivingCountCount              = stats.Int64("graphsync/receiving_pending", "number of pending receiving graphsync transfers", stats.UnitDimensionless)
-	GraphsyncReceivingTotalMemoryAllocated    = stats.Int64("graphsync/receiving_total_allocated", "amount of block memory allocated for receiving graphsync data", stats.UnitBytes)
-	GraphsyncReceivingTotalPendingAllocations = stats.Int64("graphsync/receiving_pending_allocations", "amount of block memory on hold being received pending allocation", stats.UnitBytes)
-	GraphsyncReceivingPeersPending            = stats.Int64("graphsync/receiving_peers_pending", "number of peers we can't receive more data from cause of pending allocations", stats.UnitDimensionless)
-
-	GraphsyncSendingPeersCount              = stats.Int64("graphsync/sending_peers", "number of peers we are sending graphsync data to", stats.UnitDimensionless)
-	GraphsyncSendingActiveCount             = stats.Int64("graphsync/sending_active", "number of active sending graphsync transfers", stats.UnitDimensionless)
-	GraphsyncSendingCountCount              = stats.Int64("graphsync/sending_pending", "number of pending sending graphsync transfers", stats.UnitDimensionless)
-	GraphsyncSendingTotalMemoryAllocated    = stats.Int64("graphsync/sending_total_allocated", "amount of block memory allocated for sending graphsync data", stats.UnitBytes)
-	GraphsyncSendingTotalPendingAllocations = stats.Int64("graphsync/sending_pending_allocations", "amount of block memory on hold from sending pending allocation", stats.UnitBytes)
-	GraphsyncSendingPeersPending            = stats.Int64("graphsync/sending_peers_pending", "number of peers we can't send more data to cause of pending allocations", stats.UnitDimensionless)
 
 	// chain
 	ChainNodeHeight                     = stats.Int64("chain/node_height", "Current Height of the node", stats.UnitDimensionless)
@@ -190,11 +176,11 @@ var (
 	RcmgrAllowPeer      = stats.Int64("rcmgr/allow_peer", "Number of allowed peer connections", stats.UnitDimensionless)
 	RcmgrBlockPeer      = stats.Int64("rcmgr/block_peer", "Number of blocked peer connections", stats.UnitDimensionless)
 	RcmgrAllowProto     = stats.Int64("rcmgr/allow_proto", "Number of allowed streams attached to a protocol", stats.UnitDimensionless)
-	RcmgrBlockProto     = stats.Int64("rcmgr/block_proto", "Number of blocked blocked streams attached to a protocol", stats.UnitDimensionless)
-	RcmgrBlockProtoPeer = stats.Int64("rcmgr/block_proto", "Number of blocked blocked streams attached to a protocol for a specific peer", stats.UnitDimensionless)
+	RcmgrBlockProto     = stats.Int64("rcmgr/block_proto", "Number of blocked streams attached to a protocol", stats.UnitDimensionless)
+	RcmgrBlockProtoPeer = stats.Int64("rcmgr/block_proto", "Number of blocked streams attached to a protocol for a specific peer", stats.UnitDimensionless)
 	RcmgrAllowSvc       = stats.Int64("rcmgr/allow_svc", "Number of allowed streams attached to a service", stats.UnitDimensionless)
-	RcmgrBlockSvc       = stats.Int64("rcmgr/block_svc", "Number of blocked blocked streams attached to a service", stats.UnitDimensionless)
-	RcmgrBlockSvcPeer   = stats.Int64("rcmgr/block_svc", "Number of blocked blocked streams attached to a service for a specific peer", stats.UnitDimensionless)
+	RcmgrBlockSvc       = stats.Int64("rcmgr/block_svc", "Number of blocked streams attached to a service", stats.UnitDimensionless)
+	RcmgrBlockSvcPeer   = stats.Int64("rcmgr/block_svc", "Number of blocked streams attached to a service for a specific peer", stats.UnitDimensionless)
 	RcmgrAllowMem       = stats.Int64("rcmgr/allow_mem", "Number of allowed memory reservations", stats.UnitDimensionless)
 	RcmgrBlockMem       = stats.Int64("rcmgr/block_mem", "Number of blocked memory reservations", stats.UnitDimensionless)
 
@@ -208,40 +194,46 @@ var (
 		Description: "Lotus node information",
 		Measure:     LotusInfo,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{Version, Commit, NodeType},
+		TagKeys:     []tag.Key{Version, Commit, NodeType, Network},
 	}
 	ChainNodeHeightView = &view.View{
 		Measure:     ChainNodeHeight,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	ChainNodeHeightExpectedView = &view.View{
 		Measure:     ChainNodeHeightExpected,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	ChainNodeWorkerHeightView = &view.View{
 		Measure:     ChainNodeWorkerHeight,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	BlockReceivedView = &view.View{
 		Measure:     BlockReceived,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	BlockValidationFailureView = &view.View{
 		Measure:     BlockValidationFailure,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{FailureType},
+		TagKeys:     []tag.Key{FailureType, Network},
 	}
 	BlockValidationSuccessView = &view.View{
 		Measure:     BlockValidationSuccess,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	BlockValidationDurationView = &view.View{
 		Measure:     BlockValidationDurationMilliseconds,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	BlockDelayView = &view.View{
 		Measure: BlockDelay,
-		TagKeys: []tag.Key{MinerID},
+		TagKeys: []tag.Key{MinerID, Network},
 		Aggregation: func() *view.Aggregation {
 			var bounds []float64
 			for i := 5; i < 29; i++ { // 5-29s, step 1s
@@ -260,448 +252,461 @@ var (
 	IndexerMessageValidationFailureView = &view.View{
 		Measure:     IndexerMessageValidationFailure,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{FailureType, Local},
+		TagKeys:     []tag.Key{FailureType, Local, Network},
 	}
 	IndexerMessageValidationSuccessView = &view.View{
 		Measure:     IndexerMessageValidationSuccess,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	MessagePublishedView = &view.View{
 		Measure:     MessagePublished,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	MessageReceivedView = &view.View{
 		Measure:     MessageReceived,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	MessageValidationFailureView = &view.View{
 		Measure:     MessageValidationFailure,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{FailureType, Local},
+		TagKeys:     []tag.Key{FailureType, Local, Network},
 	}
 	MessageValidationSuccessView = &view.View{
 		Measure:     MessageValidationSuccess,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	MessageValidationDurationView = &view.View{
 		Measure:     MessageValidationDuration,
 		Aggregation: defaultMillisecondsDistribution,
-		TagKeys:     []tag.Key{MsgValid, Local},
+		TagKeys:     []tag.Key{MsgValid, Local, Network},
 	}
 	MpoolGetNonceDurationView = &view.View{
 		Measure:     MpoolGetNonceDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	MpoolGetBalanceDurationView = &view.View{
 		Measure:     MpoolGetBalanceDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	MpoolAddTsDurationView = &view.View{
 		Measure:     MpoolAddTsDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	MpoolAddDurationView = &view.View{
 		Measure:     MpoolAddDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	MpoolPushDurationView = &view.View{
 		Measure:     MpoolPushDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	MpoolMessageCountView = &view.View{
 		Measure:     MpoolMessageCount,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PeerCountView = &view.View{
 		Measure:     PeerCount,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubPublishMessageView = &view.View{
 		Measure:     PubsubPublishMessage,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubDeliverMessageView = &view.View{
 		Measure:     PubsubDeliverMessage,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubRejectMessageView = &view.View{
 		Measure:     PubsubRejectMessage,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubDuplicateMessageView = &view.View{
 		Measure:     PubsubDuplicateMessage,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubPruneMessageView = &view.View{
 		Measure:     PubsubPruneMessage,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubRecvRPCView = &view.View{
 		Measure:     PubsubRecvRPC,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubSendRPCView = &view.View{
 		Measure:     PubsubSendRPC,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	PubsubDropRPCView = &view.View{
 		Measure:     PubsubDropRPC,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	APIRequestDurationView = &view.View{
 		Measure:     APIRequestDuration,
 		Aggregation: defaultMillisecondsDistribution,
-		TagKeys:     []tag.Key{APIInterface, Endpoint},
+		TagKeys:     []tag.Key{APIInterface, Endpoint, Network},
 	}
 	VMFlushCopyDurationView = &view.View{
 		Measure:     VMFlushCopyDuration,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	VMFlushCopyCountView = &view.View{
 		Measure:     VMFlushCopyCount,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	VMApplyBlocksTotalView = &view.View{
 		Measure:     VMApplyBlocksTotal,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	VMApplyMessagesView = &view.View{
 		Measure:     VMApplyMessages,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	VMApplyEarlyView = &view.View{
 		Measure:     VMApplyEarly,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	VMApplyCronView = &view.View{
 		Measure:     VMApplyCron,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	VMApplyFlushView = &view.View{
 		Measure:     VMApplyFlush,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	VMSendsView = &view.View{
 		Measure:     VMSends,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	VMAppliedView = &view.View{
 		Measure:     VMApplied,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	VMExecutionWaitingView = &view.View{
 		Measure:     VMExecutionWaiting,
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{ExecutionLane},
+		TagKeys:     []tag.Key{ExecutionLane, Network},
 	}
 	VMExecutionRunningView = &view.View{
 		Measure:     VMExecutionRunning,
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{ExecutionLane},
+		TagKeys:     []tag.Key{ExecutionLane, Network},
 	}
 
 	// miner
 	WorkerCallsStartedView = &view.View{
 		Measure:     WorkerCallsStarted,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{TaskType, WorkerHostname},
+		TagKeys:     []tag.Key{TaskType, WorkerHostname, Network},
 	}
 	WorkerCallsReturnedCountView = &view.View{
 		Measure:     WorkerCallsReturnedCount,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{TaskType, WorkerHostname},
+
+		TagKeys: []tag.Key{TaskType, WorkerHostname, Network},
 	}
 	WorkerUntrackedCallsReturnedView = &view.View{
-		Measure:     WorkerUntrackedCallsReturned,
+		Measure: WorkerUntrackedCallsReturned,
+
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	WorkerCallsReturnedDurationView = &view.View{
 		Measure:     WorkerCallsReturnedDuration,
 		Aggregation: workMillisecondsDistribution,
-		TagKeys:     []tag.Key{TaskType, WorkerHostname},
+		TagKeys:     []tag.Key{TaskType, WorkerHostname, Network},
 	}
 	SectorStatesView = &view.View{
 		Measure:     SectorStates,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{SectorState},
+		TagKeys:     []tag.Key{SectorState, Network},
 	}
 	StorageFSAvailableView = &view.View{
 		Measure:     StorageFSAvailable,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageAvailableView = &view.View{
 		Measure:     StorageAvailable,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageReservedView = &view.View{
 		Measure:     StorageReserved,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageLimitUsedView = &view.View{
 		Measure:     StorageLimitUsed,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+
+		TagKeys: []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageCapacityBytesView = &view.View{
 		Measure:     StorageCapacityBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageFSAvailableBytesView = &view.View{
 		Measure:     StorageFSAvailableBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageAvailableBytesView = &view.View{
 		Measure:     StorageAvailableBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageReservedBytesView = &view.View{
 		Measure:     StorageReservedBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageLimitUsedBytesView = &view.View{
 		Measure:     StorageLimitUsedBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 	StorageLimitMaxBytesView = &view.View{
 		Measure:     StorageLimitMaxBytes,
 		Aggregation: view.LastValue(),
-		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal},
+		TagKeys:     []tag.Key{StorageID, PathStorage, PathSeal, Network},
 	}
 
 	SchedAssignerCycleDurationView = &view.View{
 		Measure:     SchedAssignerCycleDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	SchedAssignerCandidatesDurationView = &view.View{
 		Measure:     SchedAssignerCandidatesDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	SchedAssignerWindowSelectionDurationView = &view.View{
 		Measure:     SchedAssignerWindowSelectionDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	SchedAssignerSubmitDurationView = &view.View{
 		Measure:     SchedAssignerSubmitDuration,
 		Aggregation: defaultMillisecondsDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	SchedCycleOpenWindowsView = &view.View{
 		Measure:     SchedCycleOpenWindows,
 		Aggregation: queueSizeDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 	SchedCycleQueueSizeView = &view.View{
 		Measure:     SchedCycleQueueSize,
 		Aggregation: queueSizeDistribution,
+		TagKeys:     []tag.Key{Network},
 	}
 
 	DagStorePRInitCountView = &view.View{
 		Measure:     DagStorePRInitCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRBytesRequestedView = &view.View{
 		Measure:     DagStorePRBytesRequested,
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{PRReadType},
+		TagKeys:     []tag.Key{PRReadType, Network},
 	}
 	DagStorePRBytesDiscardedView = &view.View{
 		Measure:     DagStorePRBytesDiscarded,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRDiscardCountView = &view.View{
 		Measure:     DagStorePRDiscardCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRSeekBackCountView = &view.View{
 		Measure:     DagStorePRSeekBackCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRSeekForwardCountView = &view.View{
 		Measure:     DagStorePRSeekForwardCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRSeekBackBytesView = &view.View{
 		Measure:     DagStorePRSeekBackBytes,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRSeekForwardBytesView = &view.View{
 		Measure:     DagStorePRSeekForwardBytes,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 
 	DagStorePRAtHitBytesView = &view.View{
 		Measure:     DagStorePRAtHitBytes,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRAtHitCountView = &view.View{
 		Measure:     DagStorePRAtHitCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRAtCacheFillCountView = &view.View{
 		Measure:     DagStorePRAtCacheFillCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	DagStorePRAtReadBytesView = &view.View{
 		Measure:     DagStorePRAtReadBytes,
 		Aggregation: view.Sum(),
-		TagKeys:     []tag.Key{PRReadSize},
+		TagKeys:     []tag.Key{PRReadSize, Network},
 	}
 	DagStorePRAtReadCountView = &view.View{
 		Measure:     DagStorePRAtReadCount,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PRReadSize},
+		TagKeys:     []tag.Key{PRReadSize, Network},
 	}
 
 	// splitstore
 	SplitstoreMissView = &view.View{
 		Measure:     SplitstoreMiss,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	SplitstoreCompactionTimeSecondsView = &view.View{
 		Measure:     SplitstoreCompactionTimeSeconds,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	SplitstoreCompactionHotView = &view.View{
 		Measure:     SplitstoreCompactionHot,
 		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 	SplitstoreCompactionColdView = &view.View{
 		Measure:     SplitstoreCompactionCold,
 		Aggregation: view.Sum(),
+		TagKeys:     []tag.Key{Network},
 	}
 	SplitstoreCompactionDeadView = &view.View{
 		Measure:     SplitstoreCompactionDead,
 		Aggregation: view.Sum(),
-	}
-
-	// graphsync
-	GraphsyncReceivingPeersCountView = &view.View{
-		Measure:     GraphsyncReceivingPeersCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncReceivingActiveCountView = &view.View{
-		Measure:     GraphsyncReceivingActiveCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncReceivingCountCountView = &view.View{
-		Measure:     GraphsyncReceivingCountCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncReceivingTotalMemoryAllocatedView = &view.View{
-		Measure:     GraphsyncReceivingTotalMemoryAllocated,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncReceivingTotalPendingAllocationsView = &view.View{
-		Measure:     GraphsyncReceivingTotalPendingAllocations,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncReceivingPeersPendingView = &view.View{
-		Measure:     GraphsyncReceivingPeersPending,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingPeersCountView = &view.View{
-		Measure:     GraphsyncSendingPeersCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingActiveCountView = &view.View{
-		Measure:     GraphsyncSendingActiveCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingCountCountView = &view.View{
-		Measure:     GraphsyncSendingCountCount,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingTotalMemoryAllocatedView = &view.View{
-		Measure:     GraphsyncSendingTotalMemoryAllocated,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingTotalPendingAllocationsView = &view.View{
-		Measure:     GraphsyncSendingTotalPendingAllocations,
-		Aggregation: view.LastValue(),
-	}
-	GraphsyncSendingPeersPendingView = &view.View{
-		Measure:     GraphsyncSendingPeersPending,
-		Aggregation: view.LastValue(),
+		TagKeys:     []tag.Key{Network},
 	}
 
 	// rcmgr
 	RcmgrAllowConnView = &view.View{
 		Measure:     RcmgrAllowConn,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{Direction, UseFD},
+		TagKeys:     []tag.Key{Direction, UseFD, Network},
 	}
 	RcmgrBlockConnView = &view.View{
 		Measure:     RcmgrBlockConn,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{Direction, UseFD},
+		TagKeys:     []tag.Key{Direction, UseFD, Network},
 	}
 	RcmgrAllowStreamView = &view.View{
 		Measure:     RcmgrAllowStream,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID, Direction},
+		TagKeys:     []tag.Key{PeerID, Direction, Network},
 	}
 	RcmgrBlockStreamView = &view.View{
 		Measure:     RcmgrBlockStream,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID, Direction},
+		TagKeys:     []tag.Key{PeerID, Direction, Network},
 	}
 	RcmgrAllowPeerView = &view.View{
 		Measure:     RcmgrAllowPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID},
+		TagKeys:     []tag.Key{PeerID, Network},
 	}
 	RcmgrBlockPeerView = &view.View{
 		Measure:     RcmgrBlockPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID},
+
+		TagKeys: []tag.Key{PeerID, Network},
 	}
 	RcmgrAllowProtoView = &view.View{
 		Measure:     RcmgrAllowProto,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID},
+
+		TagKeys: []tag.Key{ProtocolID, Network},
 	}
 	RcmgrBlockProtoView = &view.View{
 		Measure:     RcmgrBlockProto,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID},
+
+		TagKeys: []tag.Key{ProtocolID, Network},
 	}
 	RcmgrBlockProtoPeerView = &view.View{
 		Measure:     RcmgrBlockProtoPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID, PeerID},
+
+		TagKeys: []tag.Key{ProtocolID, PeerID, Network},
 	}
 	RcmgrAllowSvcView = &view.View{
 		Measure:     RcmgrAllowSvc,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID},
+
+		TagKeys: []tag.Key{ServiceID, Network},
 	}
 	RcmgrBlockSvcView = &view.View{
 		Measure:     RcmgrBlockSvc,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID},
+
+		TagKeys: []tag.Key{ServiceID, Network},
 	}
 	RcmgrBlockSvcPeerView = &view.View{
 		Measure:     RcmgrBlockSvcPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID, PeerID},
+
+		TagKeys: []tag.Key{ServiceID, PeerID, Network},
 	}
 	RcmgrAllowMemView = &view.View{
 		Measure:     RcmgrAllowMem,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	RcmgrBlockMemView = &view.View{
 		Measure:     RcmgrBlockMem,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 	RateLimitedView = &view.View{
 		Measure:     RateLimitCount,
 		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Network},
 	}
 )
 
@@ -709,19 +714,6 @@ var views = []*view.View{
 	InfoView,
 	PeerCountView,
 	APIRequestDurationView,
-
-	GraphsyncReceivingPeersCountView,
-	GraphsyncReceivingActiveCountView,
-	GraphsyncReceivingCountCountView,
-	GraphsyncReceivingTotalMemoryAllocatedView,
-	GraphsyncReceivingTotalPendingAllocationsView,
-	GraphsyncReceivingPeersPendingView,
-	GraphsyncSendingPeersCountView,
-	GraphsyncSendingActiveCountView,
-	GraphsyncSendingCountCountView,
-	GraphsyncSendingTotalMemoryAllocatedView,
-	GraphsyncSendingTotalPendingAllocationsView,
-	GraphsyncSendingPeersPendingView,
 
 	RcmgrAllowConnView,
 	RcmgrBlockConnView,
@@ -859,4 +851,9 @@ func Timer(ctx context.Context, m *stats.Float64Measure) func() time.Duration {
 		stats.Record(ctx, m.M(SinceInMilliseconds(start)))
 		return time.Since(start)
 	}
+}
+
+func AddNetworkTag(ctx context.Context) context.Context {
+	ctx, _ = tag.New(ctx, tag.Upsert(Network, buildconstants.NetworkBundle))
+	return ctx
 }

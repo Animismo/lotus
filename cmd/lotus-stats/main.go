@@ -17,6 +17,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/filecoin-project/lotus/tools/stats/influx"
 	"github.com/filecoin-project/lotus/tools/stats/ipldstore"
@@ -42,7 +43,7 @@ func main() {
 	app := &cli.App{
 		Name:    "lotus-stats",
 		Usage:   "Collect basic information about a filecoin network using lotus",
-		Version: build.UserVersion(),
+		Version: string(build.NodeUserVersion()),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "lotus-path",
@@ -115,7 +116,7 @@ var runCmd = &cli.Command{
 			Name:    "head-lag",
 			EnvVars: []string{"LOTUS_STATS_HEAD_LAG"},
 			Usage:   "the number of tipsets to delay processing on to smooth chain reorgs",
-			Value:   int(build.MessageConfidence),
+			Value:   int(buildconstants.MessageConfidence),
 		},
 		&cli.BoolFlag{
 			Name:    "no-sync",
@@ -214,7 +215,7 @@ var runCmd = &cli.Command{
 			}
 
 			sinceGenesis := build.Clock.Now().Sub(genesisTime)
-			expectedHeight := int64(sinceGenesis.Seconds()) / int64(build.BlockDelaySecs)
+			expectedHeight := int64(sinceGenesis.Seconds()) / int64(buildconstants.BlockDelaySecs)
 
 			startOfWindowHeight := expectedHeight - 60
 
@@ -242,7 +243,7 @@ var runCmd = &cli.Command{
 				select {
 				case <-t.C:
 					sinceGenesis := build.Clock.Now().Sub(genesisTime)
-					expectedHeight := int64(sinceGenesis.Seconds()) / int64(build.BlockDelaySecs)
+					expectedHeight := int64(sinceGenesis.Seconds()) / int64(buildconstants.BlockDelaySecs)
 
 					stats.Record(ctx, metrics.TipsetCollectionHeightExpected.M(expectedHeight))
 				}

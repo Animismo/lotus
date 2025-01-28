@@ -7,6 +7,7 @@ import (
 	"github.com/ipfs/go-cid"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-f3/certs"
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	verifregtypes "github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
@@ -91,6 +92,8 @@ type Gateway interface {
 	Version(context.Context) (APIVersion, error)
 	Discover(context.Context) (apitypes.OpenRPCDocument, error)
 
+	EthAddressToFilecoinAddress(ctx context.Context, ethAddress ethtypes.EthAddress) (address.Address, error)
+	FilecoinAddressToEthAddress(ctx context.Context, p jsonrpc.RawParams) (ethtypes.EthAddress, error)
 	EthAccounts(ctx context.Context) ([]ethtypes.EthAddress, error)
 	EthBlockNumber(ctx context.Context) (ethtypes.EthUint64, error)
 	EthGetBlockTransactionCountByNumber(ctx context.Context, blkNum ethtypes.EthUint64) (ethtypes.EthUint64, error)
@@ -104,6 +107,8 @@ type Gateway interface {
 	EthGetTransactionCount(ctx context.Context, sender ethtypes.EthAddress, blkParam ethtypes.EthBlockNumberOrHash) (ethtypes.EthUint64, error)
 	EthGetTransactionReceipt(ctx context.Context, txHash ethtypes.EthHash) (*EthTxReceipt, error)
 	EthGetTransactionReceiptLimited(ctx context.Context, txHash ethtypes.EthHash, limit abi.ChainEpoch) (*EthTxReceipt, error)
+	EthGetBlockReceipts(ctx context.Context, blkParam ethtypes.EthBlockNumberOrHash) ([]*EthTxReceipt, error)
+	EthGetBlockReceiptsLimited(ctx context.Context, blkParam ethtypes.EthBlockNumberOrHash, limit abi.ChainEpoch) ([]*EthTxReceipt, error)
 	EthGetCode(ctx context.Context, address ethtypes.EthAddress, blkParam ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error)
 	EthGetStorageAt(ctx context.Context, address ethtypes.EthAddress, position ethtypes.EthBytes, blkParam ethtypes.EthBlockNumberOrHash) (ethtypes.EthBytes, error)
 	EthGetBalance(ctx context.Context, address ethtypes.EthAddress, blkParam ethtypes.EthBlockNumberOrHash) (ethtypes.EthBigInt, error)
@@ -130,8 +135,14 @@ type Gateway interface {
 	Web3ClientVersion(ctx context.Context) (string, error)
 	EthTraceBlock(ctx context.Context, blkNum string) ([]*ethtypes.EthTraceBlock, error)
 	EthTraceReplayBlockTransactions(ctx context.Context, blkNum string, traceTypes []string) ([]*ethtypes.EthTraceReplayBlockTransaction, error)
-
+	EthTraceTransaction(ctx context.Context, txHash string) ([]*ethtypes.EthTraceTransaction, error)
+	EthTraceFilter(ctx context.Context, filter ethtypes.EthTraceFilterCriteria) ([]*ethtypes.EthTraceFilterResult, error)
+	EthGetTransactionByBlockNumberAndIndex(ctx context.Context, blkNum string, index ethtypes.EthUint64) (*ethtypes.EthTx, error)
+	EthGetTransactionByBlockHashAndIndex(ctx context.Context, blkHash ethtypes.EthHash, index ethtypes.EthUint64) (*ethtypes.EthTx, error)
 	GetActorEventsRaw(ctx context.Context, filter *types.ActorEventFilter) ([]*types.ActorEvent, error)
 	SubscribeActorEventsRaw(ctx context.Context, filter *types.ActorEventFilter) (<-chan *types.ActorEvent, error)
 	ChainGetEvents(context.Context, cid.Cid) ([]types.Event, error)
+
+	F3GetCertificate(ctx context.Context, instance uint64) (*certs.FinalityCertificate, error)
+	F3GetLatestCertificate(ctx context.Context) (*certs.FinalityCertificate, error)
 }

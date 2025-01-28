@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/go-state-types/big"
 
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/types/ethtypes"
 	"github.com/filecoin-project/lotus/itests/kit"
@@ -61,8 +62,8 @@ func TestTransactionHashLookup(t *testing.T) {
 	require.NoError(t, err)
 
 	// now deploy a contract from the embryo, and validate it went well
-	tx := ethtypes.EthTxArgs{
-		ChainID:              build.Eip155ChainId,
+	tx := ethtypes.Eth1559TxArgs{
+		ChainID:              buildconstants.Eip155ChainId,
 		Value:                big.Zero(),
 		Nonce:                0,
 		MaxFeePerGas:         types.NanoFil,
@@ -188,7 +189,13 @@ func TestTransactionHashLookupBlsFilecoinMessage(t *testing.T) {
 	// verify that we correctly reported the to address.
 	toId, err := client.StateLookupID(ctx, addr, types.EmptyTSK)
 	require.NoError(t, err)
-	toEth, err := client.FilecoinAddressToEthAddress(ctx, toId)
+
+	fp := new(ethtypes.FilecoinAddressToEthAddressParams)
+	fp.FilecoinAddress = toId
+	params, err := json.Marshal(fp)
+	require.NoError(t, err)
+
+	toEth, err := client.FilecoinAddressToEthAddress(ctx, params)
 	require.NoError(t, err)
 	require.Equal(t, &toEth, chainTx.To)
 
@@ -279,7 +286,13 @@ func TestTransactionHashLookupSecpFilecoinMessage(t *testing.T) {
 	// verify that we correctly reported the to address.
 	toId, err := client.StateLookupID(ctx, client.DefaultKey.Address, types.EmptyTSK)
 	require.NoError(t, err)
-	toEth, err := client.FilecoinAddressToEthAddress(ctx, toId)
+
+	fp := new(ethtypes.FilecoinAddressToEthAddressParams)
+	fp.FilecoinAddress = toId
+	params, err := json.Marshal(fp)
+	require.NoError(t, err)
+
+	toEth, err := client.FilecoinAddressToEthAddress(ctx, params)
 	require.NoError(t, err)
 	require.Equal(t, &toEth, chainTx.To)
 
@@ -296,7 +309,7 @@ func TestTransactionHashLookupSecpFilecoinMessage(t *testing.T) {
 	require.Equal(t, ethtypes.EthBytes(expected), chainTx.Input)
 }
 
-// TestTransactionHashLookupSecpFilecoinMessage tests to see if lotus can find a Secp Filecoin Message using the transaction hash
+// TestTransactionHashLookupNonexistentMessage tests to see if lotus can find a Secp Filecoin Message using the transaction hash
 func TestTransactionHashLookupNonexistentMessage(t *testing.T) {
 	kit.QuietMiningLogs()
 
@@ -311,7 +324,7 @@ func TestTransactionHashLookupNonexistentMessage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	cid := build.MustParseCid("bafk2bzacecapjnxnyw4talwqv5ajbtbkzmzqiosztj5cb3sortyp73ndjl76e")
+	cid := cid.MustParse("bafy2bzacecapjnxnyw4talwqv5ajbtbkzmzqiosztj5cb3sortyp73ndjl76e")
 
 	// We shouldn't be able to return a hash for this fake cid
 	chainHash, err := client.EthGetTransactionHashByCid(ctx, cid)
@@ -367,8 +380,8 @@ func TestEthGetMessageCidByTransactionHashEthTx(t *testing.T) {
 	require.NoError(t, err)
 
 	// now deploy a contract from the embryo, and validate it went well
-	tx := ethtypes.EthTxArgs{
-		ChainID:              build.Eip155ChainId,
+	tx := ethtypes.Eth1559TxArgs{
+		ChainID:              buildconstants.Eip155ChainId,
 		Value:                big.Zero(),
 		Nonce:                0,
 		MaxFeePerGas:         types.NanoFil,
@@ -385,7 +398,7 @@ func TestEthGetMessageCidByTransactionHashEthTx(t *testing.T) {
 	sender, err := tx.Sender()
 	require.NoError(t, err)
 
-	unsignedMessage, err := tx.ToUnsignedMessage(sender)
+	unsignedMessage, err := tx.ToUnsignedFilecoinMessage(sender)
 	require.NoError(t, err)
 
 	rawTxHash, err := tx.TxHash()

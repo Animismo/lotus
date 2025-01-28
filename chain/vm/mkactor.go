@@ -19,7 +19,7 @@ import (
 	builtin6 "github.com/filecoin-project/specs-actors/v6/actors/builtin"
 	builtin7 "github.com/filecoin-project/specs-actors/v7/actors/builtin"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/aerrors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
@@ -45,7 +45,7 @@ func TryCreateAccountActor(rt *Runtime, addr address.Address) (*types.Actor, add
 		return nil, address.Undef, err
 	}
 
-	if addr == build.ZeroAddress && rt.NetworkVersion() >= network.Version10 {
+	if addr == buildconstants.ZeroAddress && rt.NetworkVersion() >= network.Version10 {
 		return nil, address.Undef, aerrors.New(exitcode.ErrIllegalArgument, "cannot create the zero bls actor")
 	}
 
@@ -89,7 +89,7 @@ func TryCreateAccountActor(rt *Runtime, addr address.Address) (*types.Actor, add
 func makeAccountActor(ver actorstypes.Version, addr address.Address) (*types.Actor, aerrors.ActorError) {
 	switch addr.Protocol() {
 	case address.BLS, address.SECP256K1:
-		return newAccountActor(ver, addr), nil
+		return newAccountActor(ver), nil
 	case address.ID:
 		return nil, aerrors.Newf(exitcode.SysErrInvalidReceiver, "no actor with given ID: %s", addr)
 	case address.Actor:
@@ -99,7 +99,7 @@ func makeAccountActor(ver actorstypes.Version, addr address.Address) (*types.Act
 	}
 }
 
-func newAccountActor(ver actorstypes.Version, addr address.Address) *types.Actor {
+func newAccountActor(ver actorstypes.Version) *types.Actor {
 	// TODO: ActorsUpgrade use a global actor registry?
 	var code cid.Cid
 	switch ver {
@@ -124,7 +124,6 @@ func newAccountActor(ver actorstypes.Version, addr address.Address) *types.Actor
 		Code:    code,
 		Balance: types.NewInt(0),
 		Head:    EmptyObjectCid,
-		Address: &addr,
 	}
 
 	return nact

@@ -19,9 +19,9 @@ import (
 	"github.com/ipfs/go-datastore/query"
 	logging "github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/minio/blake2b-simd"
 	"github.com/raulk/clock"
 	"go.opencensus.io/stats"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/xerrors"
 
 	ffi "github.com/filecoin-project/filecoin-ffi"
@@ -34,6 +34,7 @@ import (
 
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/consensus"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	"github.com/filecoin-project/lotus/chain/store"
@@ -51,9 +52,9 @@ var futureDebug = false
 var rbfNumBig = types.NewInt(uint64(ReplaceByFeePercentageMinimum))
 var rbfDenomBig = types.NewInt(100)
 
-var RepublishInterval = time.Duration(10*build.BlockDelaySecs+build.PropagationDelaySecs) * time.Second
+var RepublishInterval = time.Duration(10*buildconstants.BlockDelaySecs+buildconstants.PropagationDelaySecs) * time.Second
 
-var minimumBaseFee = types.NewInt(uint64(build.MinimumBaseFee))
+var minimumBaseFee = types.NewInt(uint64(buildconstants.MinimumBaseFee))
 var baseFeeLowerBoundFactor = types.NewInt(10)
 var baseFeeLowerBoundFactorConservative = types.NewInt(100)
 
@@ -115,7 +116,7 @@ type MessagePoolEvtMessage struct {
 
 func init() {
 	// if the republish interval is too short compared to the pubsub timecache, adjust it
-	minInterval := pubsub.TimeCacheDuration + time.Duration(build.PropagationDelaySecs)*time.Second
+	minInterval := pubsub.TimeCacheDuration + time.Duration(buildconstants.PropagationDelaySecs)*time.Second
 	if RepublishInterval < minInterval {
 		RepublishInterval = minInterval
 	}
@@ -292,7 +293,7 @@ func (ms *msgSet) add(m *types.SignedMessage, mp *MessagePool, strict, untrusted
 		// ms.requiredFunds.Sub(ms.requiredFunds, exms.Message.Value.Int)
 	}
 
-	if !has && strict && len(ms.msgs) >= maxActorPendingMessages {
+	if !has && len(ms.msgs) >= maxActorPendingMessages {
 		log.Errorf("too many pending messages from actor %s", m.Message.From)
 		return false, ErrTooManyPendingMessages
 	}
@@ -372,8 +373,8 @@ func (ms *msgSet) toSlice() []*types.SignedMessage {
 }
 
 func New(ctx context.Context, api Provider, ds dtypes.MetadataDS, us stmgr.UpgradeSchedule, netName dtypes.NetworkName, j journal.Journal) (*MessagePool, error) {
-	cache, _ := lru.New2Q[cid.Cid, crypto.Signature](build.BlsSignatureCacheSize)
-	verifcache, _ := lru.New2Q[string, struct{}](build.VerifSigCacheSize)
+	cache, _ := lru.New2Q[cid.Cid, crypto.Signature](buildconstants.BlsSignatureCacheSize)
+	verifcache, _ := lru.New2Q[string, struct{}](buildconstants.VerifSigCacheSize)
 	stateNonceCache, _ := lru.New[stateNonceCacheKey, uint64](32768) // 32k * ~200 bytes = 6MB
 	keycache, _ := lru.New[address.Address, address.Address](1_000_000)
 
@@ -778,9 +779,7 @@ func (mp *MessagePool) Add(ctx context.Context, m *types.SignedMessage) error {
 	_, _ = mp.getStateNonce(ctx, m.Message.From, tmpCurTs)
 
 	mp.curTsLk.Lock()
-	if tmpCurTs == mp.curTs {
-		//with the lock enabled, mp.curTs is the same Ts as we just had, so we know that our computations are cached
-	} else {
+	if tmpCurTs != mp.curTs {
 		//curTs has been updated so we want to cache the new one:
 		tmpCurTs = mp.curTs
 		//we want to release the lock, cache the computations then grab it again
@@ -789,7 +788,7 @@ func (mp *MessagePool) Add(ctx context.Context, m *types.SignedMessage) error {
 		_, _ = mp.getStateNonce(ctx, m.Message.From, tmpCurTs)
 		mp.curTsLk.Lock()
 		//now that we have the lock, we continue, we could do this as a loop forever, but that's bad to loop forever, and this was added as an optimization and it seems once is enough because the computation < block time
-	}
+	} // else with the lock enabled, mp.curTs is the same Ts as we just had, so we know that our computations are cached
 
 	defer mp.curTsLk.Unlock()
 
@@ -876,7 +875,7 @@ func (mp *MessagePool) addTs(ctx context.Context, m *types.SignedMessage, curTs 
 	}
 
 	if snonce > m.Message.Nonce {
-		return false, xerrors.Errorf("minimum expected nonce is %d: %w", snonce, ErrNonceTooLow)
+		return false, xerrors.Errorf("minimum expected nonce is %d, got %d: %w", snonce, m.Message.Nonce, ErrNonceTooLow)
 	}
 
 	senderAct, err := mp.api.GetActorAfter(m.Message.From, curTs)
@@ -889,6 +888,11 @@ func (mp *MessagePool) addTs(ctx context.Context, m *types.SignedMessage, curTs 
 	nv := mp.api.StateNetworkVersion(ctx, epoch)
 
 	// TODO: I'm not thrilled about depending on filcns here, but I prefer this to duplicating logic
+
+	if m.Signature.Type == crypto.SigTypeDelegated && !consensus.IsValidEthTxForSending(nv, m) {
+		return false, xerrors.Errorf("network version should be atleast NV23 for sending legacy ETH transactions; but current network version is %d", nv)
+	}
+
 	if !consensus.IsValidForSending(nv, senderAct) {
 		return false, xerrors.Errorf("sender actor %s is not a valid top-level sender", m.Message.From)
 	}
@@ -1134,7 +1138,7 @@ func (mp *MessagePool) getStateBalance(ctx context.Context, addr address.Address
 	return act.Balance, nil
 }
 
-// this method is provided for the gateway to push messages.
+// PushUntrusted is provided for the gateway to push messages.
 // differences from Push:
 //   - strict checks are enabled
 //   - extra strict add checks are used when adding the messages to the msgSet
@@ -1589,7 +1593,7 @@ func (mp *MessagePool) loadLocal(ctx context.Context) error {
 		}
 
 		if err := mp.addLoaded(ctx, &sm); err != nil {
-			if xerrors.Is(err, ErrNonceTooLow) {
+			if errors.Is(err, ErrNonceTooLow) {
 				continue // todo: drop the message from local cache (if above certain confidence threshold)
 			}
 

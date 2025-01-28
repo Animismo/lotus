@@ -9,6 +9,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	cbg "github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-address"
@@ -16,6 +17,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	blockadt "github.com/filecoin-project/specs-actors/actors/util/adt"
 
+	"github.com/filecoin-project/lotus/chain/index"
 	cstore "github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
 )
@@ -27,12 +29,15 @@ func isIndexedValue(b uint8) bool {
 	return b&(types.EventFlagIndexedKey|types.EventFlagIndexedValue) > 0
 }
 
-type AddressResolver func(context.Context, abi.ActorID, *types.TipSet) (address.Address, bool)
+// AddressResolver is a function that resolves an actor ID to an address. If the
+// actor ID cannot be resolved to an address, the function must return
+// address.Undef.
+type AddressResolver func(context.Context, abi.ActorID, *types.TipSet) address.Address
 
 type EventFilter interface {
 	Filter
 
-	TakeCollectedEvents(context.Context) []*CollectedEvent
+	TakeCollectedEvents(context.Context) []*index.CollectedEvent
 	CollectEvents(context.Context, *TipSetEvents, bool, AddressResolver) error
 }
 
@@ -47,23 +52,12 @@ type eventFilter struct {
 	maxResults    int                                // maximum number of results to collect, 0 is unlimited
 
 	mu        sync.Mutex
-	collected []*CollectedEvent
+	collected []*index.CollectedEvent
 	lastTaken time.Time
 	ch        chan<- interface{}
 }
 
 var _ Filter = (*eventFilter)(nil)
-
-type CollectedEvent struct {
-	Entries     []types.EventEntry
-	EmitterAddr address.Address // address of emitter
-	EventIdx    int             // index of the event within the list of emitted events
-	Reverted    bool
-	Height      abi.ChainEpoch
-	TipSetKey   types.TipSetKey // tipset that contained the message
-	MsgIdx      int             // index of the message in the tipset
-	MsgCid      cid.Cid         // cid of message that produced event
-}
 
 func (f *eventFilter) ID() types.FilterID {
 	return f.id
@@ -87,25 +81,19 @@ func (f *eventFilter) CollectEvents(ctx context.Context, te *TipSetEvents, rever
 		return nil
 	}
 
-	// cache of lookups between actor id and f4 address
-	addressLookups := make(map[abi.ActorID]address.Address)
-
 	ems, err := te.messages(ctx)
 	if err != nil {
 		return xerrors.Errorf("load executed messages: %w", err)
 	}
+
+	eventCount := 0
+
 	for msgIdx, em := range ems {
-		for evIdx, ev := range em.Events() {
-			// lookup address corresponding to the actor id
-			addr, found := addressLookups[ev.Emitter]
-			if !found {
-				var ok bool
-				addr, ok = resolver(ctx, ev.Emitter, te.rctTs)
-				if !ok {
-					// not an address we will be able to match against
-					continue
-				}
-				addressLookups[ev.Emitter] = addr
+		for _, ev := range em.Events() {
+			addr := resolver(ctx, ev.Emitter, te.rctTs)
+			if addr == address.Undef {
+				// not an address we will be able to match against
+				continue
 			}
 
 			if !f.matchAddress(addr) {
@@ -116,10 +104,10 @@ func (f *eventFilter) CollectEvents(ctx context.Context, te *TipSetEvents, rever
 			}
 
 			// event matches filter, so record it
-			cev := &CollectedEvent{
+			cev := &index.CollectedEvent{
 				Entries:     ev.Entries,
 				EmitterAddr: addr,
-				EventIdx:    evIdx,
+				EventIdx:    eventCount,
 				Reverted:    revert,
 				Height:      te.msgTs.Height(),
 				TipSetKey:   te.msgTs.Key(),
@@ -141,19 +129,20 @@ func (f *eventFilter) CollectEvents(ctx context.Context, te *TipSetEvents, rever
 			}
 			f.collected = append(f.collected, cev)
 			f.mu.Unlock()
+			eventCount++
 		}
 	}
 
 	return nil
 }
 
-func (f *eventFilter) setCollectedEvents(ces []*CollectedEvent) {
+func (f *eventFilter) setCollectedEvents(ces []*index.CollectedEvent) {
 	f.mu.Lock()
 	f.collected = ces
 	f.mu.Unlock()
 }
 
-func (f *eventFilter) TakeCollectedEvents(ctx context.Context) []*CollectedEvent {
+func (f *eventFilter) TakeCollectedEvents(ctx context.Context) []*index.CollectedEvent {
 	f.mu.Lock()
 	collected := f.collected
 	f.collected = nil
@@ -301,9 +290,9 @@ func (e *executedMessage) Events() []*types.Event {
 
 type EventFilterManager struct {
 	ChainStore       *cstore.ChainStore
-	AddressResolver  func(ctx context.Context, emitter abi.ActorID, ts *types.TipSet) (address.Address, bool)
+	AddressResolver  AddressResolver
 	MaxFilterResults int
-	EventIndex       *EventIndex
+	ChainIndexer     index.Indexer
 
 	mu            sync.Mutex // guards mutations to filters
 	filters       map[types.FilterID]EventFilter
@@ -315,7 +304,7 @@ func (m *EventFilterManager) Apply(ctx context.Context, from, to *types.TipSet) 
 	defer m.mu.Unlock()
 	m.currentHeight = to.Height()
 
-	if len(m.filters) == 0 && m.EventIndex == nil {
+	if len(m.filters) == 0 {
 		return nil
 	}
 
@@ -325,17 +314,17 @@ func (m *EventFilterManager) Apply(ctx context.Context, from, to *types.TipSet) 
 		load:  m.loadExecutedMessages,
 	}
 
-	if m.EventIndex != nil {
-		if err := m.EventIndex.CollectEvents(ctx, tse, false, m.AddressResolver); err != nil {
-			return err
-		}
+	tsAddressResolver := tipSetCachedAddressResolver(m.AddressResolver)
+
+	g, ctx := errgroup.WithContext(ctx)
+	for _, f := range m.filters {
+		g.Go(func() error {
+			return f.CollectEvents(ctx, tse, false, tsAddressResolver)
+		})
 	}
 
-	// TODO: could run this loop in parallel with errgroup if there are many filters
-	for _, f := range m.filters {
-		if err := f.CollectEvents(ctx, tse, false, m.AddressResolver); err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return nil
@@ -346,7 +335,7 @@ func (m *EventFilterManager) Revert(ctx context.Context, from, to *types.TipSet)
 	defer m.mu.Unlock()
 	m.currentHeight = to.Height()
 
-	if len(m.filters) == 0 && m.EventIndex == nil {
+	if len(m.filters) == 0 {
 		return nil
 	}
 
@@ -356,29 +345,39 @@ func (m *EventFilterManager) Revert(ctx context.Context, from, to *types.TipSet)
 		load:  m.loadExecutedMessages,
 	}
 
-	if m.EventIndex != nil {
-		if err := m.EventIndex.CollectEvents(ctx, tse, true, m.AddressResolver); err != nil {
-			return err
-		}
+	tsAddressResolver := tipSetCachedAddressResolver(m.AddressResolver)
+
+	g, ctx := errgroup.WithContext(ctx)
+	for _, f := range m.filters {
+		g.Go(func() error {
+			return f.CollectEvents(ctx, tse, true, tsAddressResolver)
+		})
 	}
 
-	// TODO: could run this loop in parallel with errgroup if there are many filters
-	for _, f := range m.filters {
-		if err := f.CollectEvents(ctx, tse, true, m.AddressResolver); err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (m *EventFilterManager) Install(ctx context.Context, minHeight, maxHeight abi.ChainEpoch, tipsetCid cid.Cid, addresses []address.Address,
-	keysWithCodec map[string][]types.ActorEventBlock, excludeReverted bool) (EventFilter, error) {
+func (m *EventFilterManager) Fill(
+	ctx context.Context,
+	minHeight,
+	maxHeight abi.ChainEpoch,
+	tipsetCid cid.Cid,
+	addresses []address.Address,
+	keysWithCodec map[string][]types.ActorEventBlock,
+) (EventFilter, error) {
 	m.mu.Lock()
+	if m.currentHeight == 0 {
+		// sync in progress, we haven't had an Apply
+		m.currentHeight = m.ChainStore.GetHeaviestTipSet().Height()
+	}
 	currentHeight := m.currentHeight
 	m.mu.Unlock()
 
-	if m.EventIndex == nil && minHeight != -1 && minHeight < currentHeight {
+	if m.ChainIndexer == nil && minHeight != -1 && minHeight < currentHeight {
 		return nil, xerrors.Errorf("historic event index disabled")
 	}
 
@@ -397,18 +396,45 @@ func (m *EventFilterManager) Install(ctx context.Context, minHeight, maxHeight a
 		maxResults:    m.MaxFilterResults,
 	}
 
-	if m.EventIndex != nil && minHeight != -1 && minHeight < currentHeight {
-		// Filter needs historic events
-		if err := m.EventIndex.prefillFilter(ctx, f, excludeReverted); err != nil {
-			return nil, err
+	if m.ChainIndexer != nil && minHeight != -1 && minHeight < currentHeight {
+		ef := &index.EventFilter{
+			MinHeight:     minHeight,
+			MaxHeight:     maxHeight,
+			TipsetCid:     tipsetCid,
+			Addresses:     addresses,
+			KeysWithCodec: keysWithCodec,
+			MaxResults:    m.MaxFilterResults,
 		}
+
+		ces, err := m.ChainIndexer.GetEventsForFilter(ctx, ef)
+		if err != nil {
+			return nil, xerrors.Errorf("get events for filter: %w", err)
+		}
+
+		f.setCollectedEvents(ces)
+	}
+
+	return f, nil
+}
+
+func (m *EventFilterManager) Install(
+	ctx context.Context,
+	minHeight,
+	maxHeight abi.ChainEpoch,
+	tipsetCid cid.Cid,
+	addresses []address.Address,
+	keysWithCodec map[string][]types.ActorEventBlock,
+) (EventFilter, error) {
+	f, err := m.Fill(ctx, minHeight, maxHeight, tipsetCid, addresses, keysWithCodec)
+	if err != nil {
+		return nil, err
 	}
 
 	m.mu.Lock()
 	if m.filters == nil {
 		m.filters = make(map[types.FilterID]EventFilter)
 	}
-	m.filters[id] = f
+	m.filters[f.(*eventFilter).id] = f
 	m.mu.Unlock()
 
 	return f, nil
@@ -487,4 +513,26 @@ func (m *EventFilterManager) loadExecutedMessages(ctx context.Context, msgTs, rc
 	}
 
 	return ems, nil
+}
+
+// tipSetCachedAddressResolver returns a thread-safe function that resolves actor IDs to addresses
+// with a cache that is shared across all calls to the returned function. This should only be used
+// for a single TipSet, as the resolution may vary across TipSets and the cache does not account for
+// this.
+func tipSetCachedAddressResolver(resolver AddressResolver) func(ctx context.Context, emitter abi.ActorID, ts *types.TipSet) address.Address {
+	addressLookups := make(map[abi.ActorID]address.Address)
+	var addressLookupsLk sync.Mutex
+
+	return func(ctx context.Context, emitter abi.ActorID, ts *types.TipSet) address.Address {
+		addressLookupsLk.Lock()
+		defer addressLookupsLk.Unlock()
+
+		addr, ok := addressLookups[emitter]
+		if !ok {
+			addr = resolver(ctx, emitter, ts)
+			addressLookups[emitter] = addr
+		}
+
+		return addr
+	}
 }

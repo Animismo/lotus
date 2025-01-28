@@ -12,15 +12,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/zstd"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipld/go-car"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/xerrors"
 
 	actorstypes "github.com/filecoin-project/go-state-types/actors"
 
 	"github.com/filecoin-project/lotus/blockstore"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/adt"
 )
@@ -39,27 +40,28 @@ func init() {
 		}
 		BundleOverrides[actorstypes.Version(av)] = path
 	}
-	if err := loadManifests(NetworkBundle); err != nil {
+	if err := loadManifests(buildconstants.NetworkBundle); err != nil {
 		panic(err)
 	}
 
 	// The following code cid existed temporarily on the calibnet testnet, as a "buggy" storage miner actor implementation.
 	// We include them in our builtin bundle, but intentionally omit from metadata.
-	if NetworkBundle == "calibrationnet" {
+	if buildconstants.NetworkBundle == "calibrationnet" {
 		actors.AddActorMeta("storageminer", cid.MustParse("bafk2bzacecnh2ouohmonvebq7uughh4h3ppmg4cjsk74dzxlbbtlcij4xbzxq"), actorstypes.Version12)
 		actors.AddActorMeta("storageminer", cid.MustParse("bafk2bzaced7emkbbnrewv5uvrokxpf5tlm4jslu2jsv77ofw2yqdglg657uie"), actorstypes.Version12)
+		actors.AddActorMeta("verifiedregistry", cid.MustParse("bafk2bzacednskl3bykz5qpo54z2j2p4q44t5of4ktd6vs6ymmg2zebsbxazkm"), actorstypes.Version13)
 	}
 }
 
 // UseNetworkBundle switches to a different network bundle, by name.
 func UseNetworkBundle(netw string) error {
-	if NetworkBundle == netw {
+	if buildconstants.NetworkBundle == netw {
 		return nil
 	}
 	if err := loadManifests(netw); err != nil {
 		return err
 	}
-	NetworkBundle = netw
+	buildconstants.NetworkBundle = netw
 	return nil
 }
 
@@ -144,10 +146,10 @@ func readEmbeddedBuiltinActorsMetadata(bundle string) ([]*BuiltinActorsMetadata,
 	)
 
 	if !strings.HasPrefix(bundle, "v") {
-		return nil, xerrors.Errorf("bundle bundle '%q' doesn't start with a 'v'", bundle)
+		return nil, xerrors.Errorf("bundle '%q' doesn't start with a 'v'", bundle)
 	}
 	if !strings.HasSuffix(bundle, archiveExt) {
-		return nil, xerrors.Errorf("bundle bundle '%q' doesn't end with '%s'", bundle, archiveExt)
+		return nil, xerrors.Errorf("bundle '%q' doesn't end with '%s'", bundle, archiveExt)
 	}
 	version, err := strconv.ParseInt(bundle[1:len(bundle)-len(archiveExt)], 10, 0)
 	if err != nil {
@@ -159,7 +161,10 @@ func readEmbeddedBuiltinActorsMetadata(bundle string) ([]*BuiltinActorsMetadata,
 	}
 	defer fi.Close() //nolint
 
-	uncompressed := zstd.NewReader(fi)
+	uncompressed, err := zstd.NewReader(fi)
+	if err != nil {
+		return nil, err
+	}
 	defer uncompressed.Close() //nolint
 
 	var bundles []*BuiltinActorsMetadata
@@ -194,7 +199,8 @@ func readEmbeddedBuiltinActorsMetadata(bundle string) ([]*BuiltinActorsMetadata,
 		// The following manifest cids existed temporarily on the calibnet testnet
 		// We include them in our builtin bundle, but intentionally omit from metadata
 		if root == cid.MustParse("bafy2bzacedrunxfqta5skb7q7x32lnp4efz2oq7fn226ffm7fu5iqs62jkmvs") ||
-			root == cid.MustParse("bafy2bzacebl4w5ptfvuw6746w7ev562idkbf5ppq72e6zub22435ws2rukzru") {
+			root == cid.MustParse("bafy2bzacebl4w5ptfvuw6746w7ev562idkbf5ppq72e6zub22435ws2rukzru") ||
+			root == cid.MustParse("bafy2bzacea4firkyvt2zzdwqjrws5pyeluaesh6uaid246tommayr4337xpmi") {
 			continue
 		}
 		bundles = append(bundles, &BuiltinActorsMetadata{
@@ -253,7 +259,10 @@ func GetEmbeddedBuiltinActorsBundle(version actorstypes.Version, networkBundleNa
 	}
 	defer fi.Close() //nolint
 
-	uncompressed := zstd.NewReader(fi)
+	uncompressed, err := zstd.NewReader(fi)
+	if err != nil {
+		return nil, false
+	}
 	defer uncompressed.Close() //nolint
 
 	tarReader := tar.NewReader(uncompressed)

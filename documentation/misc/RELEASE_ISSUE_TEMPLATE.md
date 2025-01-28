@@ -1,93 +1,181 @@
-> Release Issue Template
+[//]: # (Below are non-visible steps intended for the issue creator)
+[//]: # (❗️ Complete the steps below as part of creating a release issue and mark them complete with an X or ✅ when done.)
+<!--{{if not .CreateOnGitHub}}-->
+[//]: # ([ ] Start an issue with title "Lotus {{.Type}} v{{.Tag}} Release" and adjust the title for whether it's a Node or Miner release.)
+[//]: # ([ ] Copy in the content of https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md)
+[//]: # ([ ] Find all the "go templating" "control" logic that is in \{\{ \}\} blocks and mimic the logic manually.)
+[//]: # ([ ] Adjust the "Meta" section values)
+[//]: # ([ ] Apply the `tpm` label to the issue)
+[//]: # ([ ] Create the issue)
+<!--{{end}}-->
+<!-- At least as of 2024-12-02, it isn't possible to programmatically pin issues. -->
+[//]: # ([ ] Pin the issue on GitHub)
 
-# Lotus X.Y.Z Release
+# 😶‍🌫 Meta
+* Type: {{.Type}} 
+* Level: {{.Level}}
+* Related network upgrade version: <!--{{if not .NetworkUpgrade}}-->n/a<!--{{else}}-->nv{{.NetworkUpgrade}}
+   * Scope, dates, and epochs: {{.NetworkUpgradeDiscussionLink}}
+   * Lotus changelog with Lotus specifics: {{.NetworkUpgradeChangelogEntryLink}}
+<!--{{end}}-->
 
-[//]: # (Open this issue as [WIP] Lotus vX.Y.Z)
-[//]: # (Apply the `tpm` label to it, and pin the issue on GitHub)
+# 🚢 Estimated shipping date
 
-## 🚢 Estimated shipping date
+[//]: # (If/when we know an exact date, remove the "week of".)
+[//]: # (If a date week is an estimate, annotate with "estimate".)
 
-<Date this release will ship on if everything goes to plan (week beginning...)>
+| Candidate | Expected Release Date | Release URL |
+|-----------|-----------------------|-------------|
+| RC1 | {{.RC1DateString}} | |
+| Stable (non-RC) | {{.StableDateString}} | |
 
-## ✅ Release Checklist
+# 🪢 Dependencies for releases
+> [!NOTE]
+> 1. This is the set of changes that need to make it in for a given RC.  This is effectively the set of changes to cherry-pick from master.
+> 2. They can be checked as done once they land in `master`.
+> 3. They are presented here for quick reference, but backporting is tracked in each `Release Checklist`.
 
-**Note for whoever is owning the release:** please capture notes as comments in this issue for anything you noticed that could be improved for future releases.  There is a *Post Release* step below for incorporating changes back into the [RELEASE_ISSUE_TEMPLATE](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md), and this is easier done by collecting notes from along the way rather than just thinking about it at the end.
+<!--{{/* Sprig is used for defining a list per https://stackoverflow.com/a/57959333 */}}-->
+<!--{{$rcVersions := list "rc1" "rcX" "Stable Release (non-RC)"}}-->
+<!--{{range $rc := $rcVersions}}-->
+## {{$rc}}
+- [ ] To Be Added
 
-First steps:
-  - [ ] Set shell variables vX.Y.Z `export X=1 && export Y=24 && export Z=3`
-  - [ ] FFI: Fork a new branch (`release/lotus-vX.Y.Z`) from the filecoin-ffi `master` branch: `git checkout master && git checkout -b release/lotus-v$X.$Y.$Z`
-  - [ ] FFI: Tag the head of `release/lotus-vX.Y.Z` as `vX.Y.Z-pre1`: `git tag -a v$X.$Y.$Z-pre1 -m"release"`
-  - [ ] Open and land a PR in lotus `master` that updates the FFI dependency to `vX.Y.Z-pre1` as cut in the previous step
-  - [ ] Fork a new branch (`release/vX.Y.Z`) from `master` and make any further release related changes to this branch. If any "non-trivial" changes get added to the release, uncheck all the checkboxes and return to this stage.
-  - [ ] Bump the version in `build/version.go` in the `master` branch to `vX.Y.(Z+1)-dev` (bump from feature release) or `vX.(Y+1).0-dev` (bump from mandatory release).
-  - [ ] Run `make gen && make docsgen-cli` before committing changes
-    
-**Prepping an RC**:
+<!--{{end}}-->
+# ✅ Release Checklist
 
-- [ ] version string in `build/version.go` has been updated (in the `release/vX.Y.Z` branch)
-- [ ] run `make gen && make docsgen-cli`
-- [ ] Generate changelog using the script at scripts/mkreleaselog
-- [ ] Add contents of generated text to lotus/CHANGELOG.md in addition to other details
-- [ ] Commit using PR
-- [ ] tag commit with `vX.Y.Z-rcN`
-- [ ] cut a pre-release [here](https://github.com/filecoin-project/lotus/releases/new?prerelease=true)
+## ⬅️  Before RC1
+<details one>
+  <summary>Section</summary>
 
-**Testing an RC**:
+<!--{{if ne .NetworkUpgrade ""}}-->
+- [ ] Make sure all [Lotus dependencies are updated to the correct versions for the network upgrade](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/Update_Dependencies_Lotus.md)
+   - Link to Lotus PR:
+<!--{{end}}-->
+- [ ] Open PR against [RELEASE_ISSUE_TEMPLATE.md](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md) with title `docs(release): v{{.Tag}} release template improvements` for improving future releases.
+   - Link to PR:
+   - There likely aren't any changes at this point, but this can be opened with a small whitespace change so the PR is open and we can more easily hold the standard of making improvements incrementally since improvements are usually better done by collecting changes/notes along the way rather than just thinking about it at the end. 
+   - This will get merged in a `Post Release` step.
+<!--{{if eq .Level "patch"}})-->
+<!--  {{if contains "Node" .Type}}-->
+- [ ] Fork a new `release/v{{.Tag}}` branch from the `master` branch and make any further release-related changes to this branch.
+   - Note: For critical security patches, fork a new branch from the last stable `release/vX.Y.x` to expedite the release process.
+<!--  {{end}}-->
+<!--  {{if contains "Miner" .Type}}-->
+- [ ] Fork a new `release/miner/v{{.Tag}}` branch from the `master` branch and make any further release-related changes to this branch.
+   - Note: For critical security patches, fork a new branch from the last stable `release/vX.Y.x` to expedite the release process.
+<!--  {{end}}-->
+<!--{{end}}-->
+<!--{{if eq .Level "minor"}}-->
+<!--  {{if contains "Node" .Type}}-->
+- [ ] Fork a new `release/v{{.Tag}}` branch from `master` and make any further release-related changes to this branch.
+<!--  {{end}}-->
+<!--  {{if contains "Miner" .Type}}-->
+- [ ] Fork a new `release/miner/v{{.Tag}}` branch from `master` and make any further release-related changes to this branch.
+<!--  {{end}}-->
+<!--{{end}}-->
+<!--{{if ne .Level "patch"}}-->
+- `master` branch Version string updates
+   - [ ] bump the version(s) in `build/version.go` to `v{{.NextTag}}-dev`.
+<!--{{  if contains "Node" .Type}}-->
+      - Ensure to update `NodeBuildVersion`
+<!--{{  end}}-->
+<!--{{  if contains "Miner" .Type}}-->
+      - Ensure to update `MinerBuildVersion`
+<!--{{  end}}-->
+   - [ ] Run `make gen && make docsgen-cli` before committing changes.
+   - [ ] Update the CHANGELOG
+     - [ ] Change the `UNRELEASED` section header to `UNRELEASED v{{.Tag}}`
+     - [ ] Set the `UNRELEASED v{{.Tag}}` section's content to be "_See https://github.com/filecoin-project/lotus/blob/release/v{{.Tag}}/CHANGELOG.md_"
+     - [ ] Add a new `UNRELEASED` header to top.
+   - [ ] Create a PR with title `build: update Lotus {{.Type}} version to v{{.NextTag}}-dev in master`
+     - Link to PR:
+   - [ ] Merge PR
+<!--{{end}}-->
+</details>
 
-- [ ] **Stage 0 - Automated Testing**
-  - Automated Testing
-    - [ ] CI: Ensure that all tests are passing.
-    - [ ] Testground tests
+## 🏎️  RCs
 
-- [ ] **Stage 1 - Internal Testing**
-  - Binaries
-    - [ ] Ensure the RC release has downloadable binaries
-  - Upgrade our testnet infra
-    - [ ] Wait 24 hours, confirm nodes stay in sync
-  -  Upgrade our mainnet infra
-    - [ ] Subset of development full archival nodes
-    - [ ] Subset of bootstrappers (1 per region)
-    - [ ] Confirm nodes stay in sync
-    - Metrics report
-        - Block validation time
-        - Memory / CPU usage
-        - Number of goroutines
-        - IPLD block read latency
-        - Bandwidth usage
-    - [ ] If anything has worsened significantly, investigate + fix
-  - Confirm the following work (some combination of Testground / Calibnet / Mainnet / beta users)
-    - [ ] Seal a sector
-    - [ ] make a deal
-    - [ ] Submit a PoSt
-    - [ ] (optional) let a sector go faulty, and see it be recovered
-    
-- [ ] **Stage 2 - Community Testing**
-  - [ ] Test with [SPX](https://github.com/filecoin-project/lotus/discussions/7461) fellows
-  - [ ] Work on documentations for new features, configuration changes and so on.
+<!--{{range $rc := $rcVersions}}-->
+<!--  {{$tagSuffix := ""}}-->
+<!--  {{if contains "rc" $rc}}-->
+<!--    {{$tagSuffix = printf "-%s" $rc}}-->
+<!--  {{end}}-->
+### {{$rc}}
+<details>
+  <summary>Section</summary>
 
-- [ ] **Stage 3 - Community Prod Testing**
-  - [ ] Update the [CHANGELOG.md](https://github.com/filecoin-project/lotus/blob/master/CHANGELOG.md) to the state that can be used as release note.
-  - [ ] Invite the wider community through (link to the release issue)
-    
-**Stable Release**
-  - [ ] Final preparation
-    - [ ] Verify that version string in [`version.go`](https://github.com/filecoin-project/lotus/blob/master/build/version.go) has been updated.
-    - [ ] Verify that codegen is up to date (`make gen && make docsgen-cli`)
-    - [ ] Ensure that [CHANGELOG.md](https://github.com/filecoin-project/lotus/blob/master/CHANGELOG.md) is up to date
-    - [ ] Merge `release-vX.Y.Z` into the `releases` branch.
-    - [ ] Tag this merge commit (on the `releases` branch) with `vX.Y.Z`
-    - [ ] Cut the release [here](https://github.com/filecoin-project/lotus/releases/new?prerelease=false&target=releases).
+> [!IMPORTANT]
+> These PRs should be done in and target the `release/v{{$.Tag}}` or `release/miner/v{{$.Tag}}` branch.
 
+#### Backport PR for {{$rc}}
+- [ ] All explicitly tracked items from `Dependencies for releases` have landed
+<!--  {{if ne $rc "rc1"}}-->
+- [ ] Backported [everything with the "backport" label](https://github.com/filecoin-project/lotus/issues?q=label%3Arelease%2Fbackport+)
+- [ ] Create a PR with title `build: backport changes for {{$.Type}} v{{$.Tag}}{{$tagSuffix}}`
+   - Link to PR:
+- [ ] Merge PR
+- [ ] Remove the "backport" label from all backported PRs (no ["backport" issues](https://github.com/filecoin-project/lotus/issues?q=label%3Arelease%2Fbackport+))
+<!--  {{end}}-->
 
-**Post-Release**
-  - [ ] Merge the `releases` branch back into `master`, ignoring the changes to `version.go` (keep the `-dev` version from master). Do NOT delete the `releases` branch when doing so!
-  - [ ] Update [RELEASE_ISSUE_TEMPLATE.md](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md) with any improvements determined from this latest release iteration.
-  - [ ] Create an issue using [RELEASE_ISSUE_TEMPLATE.md](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md) for the _next_ release.
+#### Release PR for {{$rc}}
 
-## ❤️ Contributors
+- [ ] Update the version string(s) in `build/version.go` to one {{if contains "rc" $rc}}ending with '-{{$rc}}'{{else}}**NOT* ending with 'rcX'{{end}}.
+<!--  {{if contains "Node" $.Type}}-->
+    - Ensure to update `NodeBuildVersion`
+<!--  {{end}}-->
+<!--  {{if contains "Miner" $.Type}}-->
+    - Ensure to update `MinerBuildVersion`
+<!--  {{end}}-->
+- [ ] Run `make gen && make docsgen-cli` to generate documentation
+- [ ] Create a draft PR with title `build: release Lotus {{$.Type}} v{{$.Tag}}{{$tagSuffix}}`
+   - Link to PR:
+   - Opening a PR will trigger a CI run that will build assets, create a draft GitHub release, and attach the assets.
+- [ ] Changelog prep
+   - [ ] Go to the [releases page](https://github.com/filecoin-project/lotus/releases) and copy the auto-generated release notes into the CHANGELOG
+   - [ ] Perform editorial review (e.g., callout breaking changes, new features, FIPs, actor bundles)
+<!--  {{if ne $.NetworkUpgrade ""}}-->
+<!--    {{if contains "rc" $rc}}-->
+   - [ ] (network upgrade) Specify whether the Calibration or Mainnet upgrade epoch has been specified or not yet.
+      - Example where these weren't specified yet: [PR #12169](https://github.com/filecoin-project/lotus/pull/12169)
+<!--    {{else}}-->
+   - [ ] (network upgrade) Ensure the Mainnet upgrade epoch is specified.
+<!--    {{end}}-->
+<!--  {{end}}-->
+   - [ ] Ensure no missing content when spot checking git history
+      - Example command looking at git commits: `git log --oneline --graph vA.B.C..`, where A.B.C correspond to the previous release.
+      - Example GitHub UI search looking at merged PRs into master: https://github.com/filecoin-project/lotus/pulls?q=is%3Apr+base%3Amaster+merged%3A%3EYYYY-MM-DD
+      - Example `gh` cli command looking at merged PRs into master and sorted by title to group similar areas (where `YYYY-MM-DD` is the start search date): `gh pr list --repo filecoin-project/lotus --search "base:master merged:>YYYY-MM-DD" --json number,mergedAt,author,title | jq -r '.[] | [.number, .mergedAt, .author.login, .title] | @tsv' | sort -k4`
+    - [ ] Update the PR with the commit(s) made to the CHANGELOG
+- [ ] Mark the PR "ready for review" (non-draft)
+- [ ] Merge the PR
+   - Merging the PR will trigger a CI run that will build assets, attach the assets to the GitHub release, publish the GitHub release, and create the corresponding git tag.
+ - [ ] Update `🚢 Estimated shipping date` table
+ - [ ] Comment on this issue announcing the release:
+    - Link to issue comment:
+
+#### Testing for {{$rc}}
+> [!NOTE]
+> Link to any special steps for testing releases beyond ensuring CI is green.  Steps can be inlined here or tracked elsewhere.
+
+<!--{{end}}-->
+</details>
+
+## ➡ Post-Release
+<details>
+  <summary open>Section</summary>
+
+- [ ] Open a PR against `master` cherry-picking the CHANGELOG commits from the `release/v{{.Tag}}` branch. Title it `chore(release): cherry-pick v{{.Tag}} changelog back to master`
+   - Link to PR:
+   - Assuming we followed [the process of merging changes into `master` first before backporting to the release branch](https://github.com/filecoin-project/lotus/blob/master/LOTUS_RELEASE_FLOW.md#branch-and-tag-strategy), the only changes should be CHANGELOG updates.
+- [ ] Finish updating/merging the [RELEASE_ISSUE_TEMPLATE.md](https://github.com/filecoin-project/lotus/blob/master/documentation/misc/RELEASE_ISSUE_TEMPLATE.md) PR from `Before RC1` with any improvements determined from this latest release iteration.
+- [ ] Review and approve the auto-generated PR in [lotus-docs](https://github.com/filecoin-project/lotus-docs/pulls) that updates the latest Lotus version information.
+</details>
+
+# ❤️ Contributors
 
 See the final release notes!
 
-## ⁉️ Do you have questions?
+# ⁉️ Do you have questions?
 
 Leave a comment in this ticket!

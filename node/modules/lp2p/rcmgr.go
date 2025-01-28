@@ -15,19 +15,22 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+	ma "github.com/multiformats/go-multiaddr"
+	madns "github.com/multiformats/go-multiaddr-dns"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 	"go.uber.org/fx"
 
 	"github.com/filecoin-project/lotus/metrics"
+	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/repo"
 )
 
 var rcmgrMetricsOnce sync.Once
 
-func ResourceManager(connMgrHi uint) func(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceManager, error) {
-	return func(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceManager, error) {
+func ResourceManager(connMgrHi uint) func(lc fx.Lifecycle, repo repo.LockedRepo, bs dtypes.BootstrapPeers) (network.ResourceManager, error) {
+	return func(lc fx.Lifecycle, repo repo.LockedRepo, bs dtypes.BootstrapPeers) (network.ResourceManager, error) {
 		isFullNode := repo.RepoType().Type() == "FullNode"
 		envvar := os.Getenv("LOTUS_RCMGR")
 		if (isFullNode && envvar == "0") || // only set NullResourceManager if envvar is explicitly "0"
@@ -38,7 +41,7 @@ func ResourceManager(connMgrHi uint) func(lc fx.Lifecycle, repo repo.LockedRepo)
 
 		log.Info("libp2p resource manager is enabled")
 		// enable debug logs for rcmgr
-		logging.SetLogLevel("rcmgr", "debug")
+		_ = logging.SetLogLevel("rcmgr", "debug")
 
 		// Adjust default defaultLimits
 		// - give it more memory, up to 4G, min of 1G
@@ -133,6 +136,20 @@ func ResourceManager(connMgrHi uint) func(lc fx.Lifecycle, repo repo.LockedRepo)
 			opts = append(opts, rcmgr.WithTrace(traceFile))
 		}
 
+		resolver := madns.DefaultResolver
+		var bootstrapperMaddrs []ma.Multiaddr
+		for _, pi := range bs {
+			for _, addr := range pi.Addrs {
+				resolved, err := resolver.Resolve(context.Background(), addr)
+				if err != nil {
+					continue
+				}
+				bootstrapperMaddrs = append(bootstrapperMaddrs, resolved...)
+			}
+		}
+
+		opts = append(opts, rcmgr.WithAllowlistedMultiaddrs(bootstrapperMaddrs))
+
 		mgr, err := rcmgr.NewResourceManager(limiter, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("error creating resource manager: %w", err)
@@ -162,6 +179,7 @@ type rcmgrMetrics struct{}
 
 func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	if dir == network.DirInbound {
 		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
 	} else {
@@ -177,6 +195,7 @@ func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 
 func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	if dir == network.DirInbound {
 		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
 	} else {
@@ -192,6 +211,7 @@ func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
 
 func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	if dir == network.DirInbound {
 		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
 	} else {
@@ -202,6 +222,7 @@ func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
 
 func (r rcmgrMetrics) BlockStream(p peer.ID, dir network.Direction) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	if dir == network.DirInbound {
 		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
 	} else {
@@ -212,46 +233,54 @@ func (r rcmgrMetrics) BlockStream(p peer.ID, dir network.Direction) {
 
 func (r rcmgrMetrics) AllowPeer(p peer.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	stats.Record(ctx, metrics.RcmgrAllowPeer.M(1))
 }
 
 func (r rcmgrMetrics) BlockPeer(p peer.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	stats.Record(ctx, metrics.RcmgrBlockPeer.M(1))
 }
 
 func (r rcmgrMetrics) AllowProtocol(proto protocol.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
 	stats.Record(ctx, metrics.RcmgrAllowProto.M(1))
 }
 
 func (r rcmgrMetrics) BlockProtocol(proto protocol.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
 	stats.Record(ctx, metrics.RcmgrBlockProto.M(1))
 }
 
 func (r rcmgrMetrics) BlockProtocolPeer(proto protocol.ID, p peer.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
 	stats.Record(ctx, metrics.RcmgrBlockProtoPeer.M(1))
 }
 
 func (r rcmgrMetrics) AllowService(svc string) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
 	stats.Record(ctx, metrics.RcmgrAllowSvc.M(1))
 }
 
 func (r rcmgrMetrics) BlockService(svc string) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
 	stats.Record(ctx, metrics.RcmgrBlockSvc.M(1))
 }
 
 func (r rcmgrMetrics) BlockServicePeer(svc string, p peer.ID) {
 	ctx := context.Background()
+	ctx = metrics.AddNetworkTag(ctx)
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
 	stats.Record(ctx, metrics.RcmgrBlockSvcPeer.M(1))
 }

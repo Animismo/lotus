@@ -36,8 +36,9 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	lapi "github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/v0api"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
+	"github.com/filecoin-project/lotus/chain/actors/policy"
 	"github.com/filecoin-project/lotus/chain/consensus"
 	"github.com/filecoin-project/lotus/chain/types"
 )
@@ -71,6 +72,12 @@ var ChainCmd = &cli.Command{
 var ChainHeadCmd = &cli.Command{
 	Name:  "head",
 	Usage: "Print chain head",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "height",
+			Usage: "print just the epoch number of the chain head",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		afmt := NewAppFmt(cctx.App)
 
@@ -86,8 +93,12 @@ var ChainHeadCmd = &cli.Command{
 			return err
 		}
 
-		for _, c := range head.Cids() {
-			afmt.Println(c)
+		if cctx.Bool("height") {
+			afmt.Println(head.Height())
+		} else {
+			for _, c := range head.Cids() {
+				afmt.Println(c)
+			}
 		}
 		return nil
 	},
@@ -570,12 +581,12 @@ var ChainListCmd = &cli.Command{
 	Aliases: []string{"love"},
 	Usage:   "View a segment of the chain",
 	Flags: []cli.Flag{
-		&cli.Uint64Flag{Name: "height", DefaultText: "current head"},
+		&cli.Uint64Flag{Name: "epoch", Aliases: []string{"height"}, DefaultText: "current head"},
 		&cli.IntFlag{Name: "count", Value: 30},
 		&cli.StringFlag{
 			Name:  "format",
-			Usage: "specify the format to print out tipsets",
-			Value: "<height>: (<time>) <blocks>",
+			Usage: "specify the format to print out tipsets using placeholders: <epoch>, <time>, <blocks>, <weight>, <tipset>, <json_tipset>\n",
+			Value: "<epoch>: (<time>) <blocks>",
 		},
 		&cli.BoolFlag{
 			Name:  "gas-stats",
@@ -631,7 +642,7 @@ var ChainListCmd = &cli.Command{
 			tss = otss
 			for i, ts := range tss {
 				pbf := ts.Blocks()[0].ParentBaseFee
-				afmt.Printf("%d: %d blocks (baseFee: %s -> maxFee: %s)\n", ts.Height(), len(ts.Blocks()), ts.Blocks()[0].ParentBaseFee, types.FIL(types.BigMul(pbf, types.NewInt(uint64(build.BlockGasLimit)))))
+				afmt.Printf("%d: %d blocks (baseFee: %s -> maxFee: %s)\n", ts.Height(), len(ts.Blocks()), ts.Blocks()[0].ParentBaseFee, types.FIL(types.BigMul(pbf, types.NewInt(uint64(buildconstants.BlockGasLimit)))))
 
 				for _, b := range ts.Blocks() {
 					msgs, err := api.ChainGetBlockMessages(ctx, b.Cid())
@@ -657,7 +668,7 @@ var ChainListCmd = &cli.Command{
 						avgpremium = big.Div(psum, big.NewInt(int64(lenmsgs)))
 					}
 
-					afmt.Printf("\t%s: \t%d msgs, gasLimit: %d / %d (%0.2f%%), avgPremium: %s\n", b.Miner, len(msgs.BlsMessages)+len(msgs.SecpkMessages), limitSum, build.BlockGasLimit, 100*float64(limitSum)/float64(build.BlockGasLimit), avgpremium)
+					afmt.Printf("\t%s: \t%d msgs, gasLimit: %d / %d (%0.2f%%), avgPremium: %s\n", b.Miner, len(msgs.BlsMessages)+len(msgs.SecpkMessages), limitSum, buildconstants.BlockGasLimit, 100*float64(limitSum)/float64(buildconstants.BlockGasLimit), avgpremium)
 				}
 				if i < len(tss)-1 {
 					msgs, err := api.ChainGetParentMessages(ctx, tss[i+1].Blocks()[0].Cid())
@@ -680,7 +691,7 @@ var ChainListCmd = &cli.Command{
 					}
 
 					gasEfficiency := 100 * float64(gasUsed) / float64(limitSum)
-					gasCapacity := 100 * float64(limitSum) / float64(build.BlockGasLimit)
+					gasCapacity := 100 * float64(limitSum) / float64(buildconstants.BlockGasLimit)
 
 					afmt.Printf("\ttipset: \t%d msgs, %d (%0.2f%%) / %d (%0.2f%%)\n", len(msgs), gasUsed, gasEfficiency, limitSum, gasCapacity)
 				}
@@ -864,7 +875,7 @@ func (ht *apiIpldStore) Get(ctx context.Context, c cid.Cid, out interface{}) err
 		return nil
 	}
 
-	return fmt.Errorf("Object does not implement CBORUnmarshaler")
+	return fmt.Errorf("object does not implement CBORUnmarshaler")
 }
 
 func (ht *apiIpldStore) Put(ctx context.Context, v interface{}) (cid.Cid, error) {
@@ -921,7 +932,9 @@ func handleHamtAddress(ctx context.Context, api v0api.FullNode, r cid.Cid) error
 }
 
 func printTipSet(format string, ts *types.TipSet, afmt *AppFmt) {
-	format = strings.ReplaceAll(format, "<height>", fmt.Sprint(ts.Height()))
+	format = strings.ReplaceAll(format, "<epoch>", fmt.Sprint(ts.Height()))
+	format = strings.ReplaceAll(format, "<height>", fmt.Sprint(ts.Height())) // backwards compatibility
+
 	format = strings.ReplaceAll(format, "<time>", time.Unix(int64(ts.MinTimestamp()), 0).Format(time.Stamp))
 	blks := "[ "
 	for _, b := range ts.Blocks() {
@@ -937,6 +950,16 @@ func printTipSet(format string, ts *types.TipSet, afmt *AppFmt) {
 
 	format = strings.ReplaceAll(format, "<tipset>", strings.Join(sCids, ","))
 	format = strings.ReplaceAll(format, "<blocks>", blks)
+	if strings.Contains(format, "<json_tipset>") {
+		jsonTipset, err := json.Marshal(ts)
+		if err != nil {
+			// should not happen
+			afmt.Println("Error encoding tipset to JSON:", err)
+			return
+		}
+		format = strings.ReplaceAll(format, "<json_tipset>", string(jsonTipset))
+	}
+
 	format = strings.ReplaceAll(format, "<weight>", fmt.Sprint(ts.Blocks()[0].ParentWeight))
 
 	afmt.Println(format)
@@ -1098,8 +1121,8 @@ var ChainExportCmd = &cli.Command{
 		}
 
 		rsrs := abi.ChainEpoch(cctx.Int64("recent-stateroots"))
-		if cctx.IsSet("recent-stateroots") && rsrs < build.Finality {
-			return fmt.Errorf("\"recent-stateroots\" has to be greater than %d", build.Finality)
+		if cctx.IsSet("recent-stateroots") && rsrs < policy.ChainFinality {
+			return fmt.Errorf("\"recent-stateroots\" has to be greater than %d", policy.ChainFinality)
 		}
 
 		fi, err := createExportFile(cctx.App, cctx.Args().First())
@@ -1229,11 +1252,11 @@ var ChainExportRangeCmd = &cli.Command{
 		}
 
 		if head.Height() < tail.Height() {
-			return errors.New("Height of --head tipset must be greater or equal to the height of the --tail tipset")
+			return errors.New("height of --head tipset must be greater or equal to the height of the --tail tipset")
 		}
 
 		if !cctx.Bool("internal") {
-			return errors.New("Non-internal exports are not implemented")
+			return errors.New("non-internal exports are not implemented")
 		}
 
 		err = api.ChainExportRangeInternal(ctx, head.Key(), tail.Key(), lapi.ChainExportConfig{

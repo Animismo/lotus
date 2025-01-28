@@ -1,4 +1,3 @@
-//stm: ignore
 //go:build !windows
 // +build !windows
 
@@ -13,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 )
 
 func TestManageFdLimit(t *testing.T) {
@@ -22,7 +21,7 @@ func TestManageFdLimit(t *testing.T) {
 		t.Errorf("Cannot manage file descriptors")
 	}
 
-	if build.DefaultFDLimit != uint64(16<<10) {
+	if buildconstants.DefaultFDLimit != uint64(16<<10) {
 		t.Errorf("Maximum file descriptors default value changed")
 	}
 }
@@ -46,8 +45,8 @@ func TestManageInvalidNFds(t *testing.T) {
 
 	t.Logf("setting ulimit to %d, max %d, cur %d", value, rlimit.Max, rlimit.Cur)
 
-	if changed, new, err := ManageFdLimit(); err == nil {
-		t.Errorf("ManageFdLimit should return an error: changed %t, new: %d", changed, new)
+	if changed, isNew, err := ManageFdLimit(); err == nil {
+		t.Errorf("ManageFdLimit should return an error: changed %t, new: %d", changed, isNew)
 	} else if err != nil {
 		flag := strings.Contains(err.Error(),
 			"failed to raise ulimit to LOTUS_FD_MAX")

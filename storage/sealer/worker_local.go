@@ -3,6 +3,7 @@ package sealer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"reflect"
@@ -45,6 +46,7 @@ type WorkerConfig struct {
 }
 
 // used do provide custom proofs impl (mostly used in testing)
+
 type ExecutorFunc func(w *LocalWorker) (storiface.Storage, error)
 type EnvFunc func(string) (string, bool)
 
@@ -150,19 +152,19 @@ type localWorkerPathProvider struct {
 }
 
 func (l *localWorkerPathProvider) AcquireSector(ctx context.Context, sector storiface.SectorRef, existing storiface.SectorFileType, allocate storiface.SectorFileType, sealing storiface.PathType) (storiface.SectorPaths, func(), error) {
-	paths, storageIDs, err := l.w.storage.AcquireSector(ctx, sector, existing, allocate, sealing, l.op)
+	spaths, storageIDs, err := l.w.storage.AcquireSector(ctx, sector, existing, allocate, sealing, l.op)
 	if err != nil {
 		return storiface.SectorPaths{}, nil, err
 	}
 
-	releaseStorage, err := l.w.localStore.Reserve(ctx, sector, allocate, storageIDs, storiface.FSOverheadSeal)
+	releaseStorage, err := l.w.localStore.Reserve(ctx, sector, allocate, storageIDs, storiface.FSOverheadSeal, paths.MinFreeStoragePercentage)
 	if err != nil {
 		return storiface.SectorPaths{}, nil, xerrors.Errorf("reserving storage space: %w", err)
 	}
 
-	log.Debugf("acquired sector %d (e:%d; a:%d): %v", sector, existing, allocate, paths)
+	log.Debugf("acquired sector %d (e:%d; a:%d): %v", sector, existing, allocate, spaths)
 
-	return paths, func() {
+	return spaths, func() {
 		releaseStorage()
 
 		for _, fileType := range storiface.PathTypes {
@@ -311,7 +313,7 @@ func (l *LocalWorker) asyncCall(ctx context.Context, sector storiface.SectorRef,
 
 func toCallError(err error) *storiface.CallError {
 	var serr *storiface.CallError
-	if err != nil && !xerrors.As(err, &serr) {
+	if err != nil && !errors.As(err, &serr) {
 		serr = storiface.Err(storiface.ErrUnknown, err)
 	}
 
@@ -675,6 +677,8 @@ func (l *LocalWorker) GenerateWindowPoStAdv(ctx context.Context, ppt abi.Registe
 
 		go func(i int, s storiface.PostSectorChallenge) {
 			defer wg.Done()
+			ctx := ctx
+
 			defer func() {
 				if l.challengeThrottle != nil {
 					<-l.challengeThrottle

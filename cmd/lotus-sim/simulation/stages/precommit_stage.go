@@ -54,7 +54,7 @@ func (*PreCommitStage) Name() string {
 	return "pre-commit"
 }
 
-// packPreCommits packs pre-commit messages until the block is full.
+// PackMessages packs pre-commit messages until the block is full.
 func (stage *PreCommitStage) PackMessages(ctx context.Context, bb *blockbuilder.BlockBuilder) (_err error) {
 	if !stage.initialized {
 		if err := stage.load(ctx, bb); err != nil {
@@ -124,7 +124,7 @@ func (stage *PreCommitStage) PackMessages(ctx context.Context, bb *blockbuilder.
 	}
 }
 
-// packPreCommitsMiner packs count pre-commits for the given miner.
+// packMiner packs count pre-commits for the given miner.
 func (stage *PreCommitStage) packMiner(
 	ctx context.Context, bb *blockbuilder.BlockBuilder,
 	minerAddr address.Address, count int,
@@ -313,7 +313,7 @@ func (stage *PreCommitStage) load(ctx context.Context, bb *blockbuilder.BlockBui
 			sealList = append(sealList, onboardingInfo{addr, uint64(sectorCount)})
 		}
 		return nil
-	})
+	}, false)
 	if err != nil {
 		return err
 	}

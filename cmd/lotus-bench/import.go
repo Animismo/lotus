@@ -35,7 +35,8 @@ import (
 	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
 	"github.com/filecoin-project/lotus/chain/consensus"
 	"github.com/filecoin-project/lotus/chain/consensus/filcns"
-	"github.com/filecoin-project/lotus/chain/index"
+	"github.com/filecoin-project/lotus/chain/proofs"
+	proofsffi "github.com/filecoin-project/lotus/chain/proofs/ffi"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -45,8 +46,6 @@ import (
 	_ "github.com/filecoin-project/lotus/lib/sigs/delegated"
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
 	"github.com/filecoin-project/lotus/node/repo"
-	"github.com/filecoin-project/lotus/storage/sealer/ffiwrapper"
-	"github.com/filecoin-project/lotus/storage/sealer/storiface"
 )
 
 type TipSetExec struct {
@@ -207,7 +206,7 @@ var importBenchCmd = &cli.Command{
 			defer c.Close() //nolint:errcheck
 		}
 
-		var verifier storiface.Verifier = ffiwrapper.ProofVerifier
+		var verifier proofs.Verifier = proofsffi.ProofVerifier
 		if cctx.IsSet("syscall-cache") {
 			scds, err := badger.NewDatastore(cctx.String("syscall-cache"), &badger.DefaultOptions)
 			if err != nil {
@@ -229,7 +228,8 @@ var importBenchCmd = &cli.Command{
 		defer cs.Close() //nolint:errcheck
 
 		// TODO: We need to supply the actual beacon after v14
-		stm, err := stmgr.NewStateManager(cs, consensus.NewTipSetExecutor(filcns.RewardFunc), vm.Syscalls(verifier), filcns.DefaultUpgradeSchedule(), nil, metadataDs, index.DummyMsgIndex)
+		stm, err := stmgr.NewStateManager(cs, consensus.NewTipSetExecutor(filcns.RewardFunc), vm.Syscalls(verifier), filcns.DefaultUpgradeSchedule(), nil,
+			metadataDs, nil)
 		if err != nil {
 			return err
 		}

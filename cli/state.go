@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -17,10 +18,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/xerrors"
@@ -36,7 +35,7 @@ import (
 	lapi "github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/blockstore"
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
 	"github.com/filecoin-project/lotus/chain/consensus"
@@ -46,43 +45,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	cliutil "github.com/filecoin-project/lotus/cli/util"
 )
-
-var StateCmd = &cli.Command{
-	Name:  "state",
-	Usage: "Interact with and query filecoin chain state",
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:  "tipset",
-			Usage: "specify tipset to call method on (pass comma separated array of cids)",
-		},
-	},
-	Subcommands: []*cli.Command{
-		StatePowerCmd,
-		StateSectorsCmd,
-		StateActiveSectorsCmd,
-		StateListActorsCmd,
-		StateListMinersCmd,
-		StateCircSupplyCmd,
-		StateSectorCmd,
-		StateGetActorCmd,
-		StateLookupIDCmd,
-		StateReplayCmd,
-		StateSectorSizeCmd,
-		StateReadStateCmd,
-		StateListMessagesCmd,
-		StateComputeStateCmd,
-		StateCallCmd,
-		StateGetDealSetCmd,
-		StateWaitMsgCmd,
-		StateSearchMsgCmd,
-		StateMinerInfo,
-		StateMarketCmd,
-		StateExecTraceCmd,
-		StateNtwkVersionCmd,
-		StateMinerProvingDeadlineCmd,
-		StateSysActorCIDsCmd,
-	},
-}
 
 var StateMinerProvingDeadlineCmd = &cli.Command{
 	Name:      "miner-proving-deadline",
@@ -122,114 +84,6 @@ var StateMinerProvingDeadlineCmd = &cli.Command{
 		fmt.Printf("Close:\t\t%s\n", cd.Close)
 		fmt.Printf("Challenge:\t%s\n", cd.Challenge)
 		fmt.Printf("FaultCutoff:\t%s\n", cd.FaultCutoff)
-
-		return nil
-	},
-}
-
-var StateMinerInfo = &cli.Command{
-	Name:      "miner-info",
-	Usage:     "Retrieve miner information",
-	ArgsUsage: "[minerAddress]",
-	Action: func(cctx *cli.Context) error {
-		api, closer, err := GetFullNodeAPI(cctx)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		ctx := ReqContext(cctx)
-
-		if cctx.NArg() != 1 {
-			return IncorrectNumArgs(cctx)
-		}
-
-		addr, err := address.NewFromString(cctx.Args().First())
-		if err != nil {
-			return err
-		}
-
-		ts, err := LoadTipSet(ctx, cctx, api)
-		if err != nil {
-			return err
-		}
-
-		mi, err := api.StateMinerInfo(ctx, addr, ts.Key())
-		if err != nil {
-			return err
-		}
-
-		availableBalance, err := api.StateMinerAvailableBalance(ctx, addr, ts.Key())
-		if err != nil {
-			return xerrors.Errorf("getting miner available balance: %w", err)
-		}
-		fmt.Printf("Available Balance: %s\n", types.FIL(availableBalance))
-		fmt.Printf("Owner:\t%s\n", mi.Owner)
-		fmt.Printf("Worker:\t%s\n", mi.Worker)
-		for i, controlAddress := range mi.ControlAddresses {
-			fmt.Printf("Control %d: \t%s\n", i, controlAddress)
-		}
-		if mi.Beneficiary != address.Undef {
-			fmt.Printf("Beneficiary:\t%s\n", mi.Beneficiary)
-			if mi.Beneficiary != mi.Owner {
-				fmt.Printf("Beneficiary Quota:\t%s\n", mi.BeneficiaryTerm.Quota)
-				fmt.Printf("Beneficiary Used Quota:\t%s\n", mi.BeneficiaryTerm.UsedQuota)
-				fmt.Printf("Beneficiary Expiration:\t%s\n", mi.BeneficiaryTerm.Expiration)
-			}
-		}
-		if mi.PendingBeneficiaryTerm != nil {
-			fmt.Printf("Pending Beneficiary Term:\n")
-			fmt.Printf("New Beneficiary:\t%s\n", mi.PendingBeneficiaryTerm.NewBeneficiary)
-			fmt.Printf("New Quota:\t%s\n", mi.PendingBeneficiaryTerm.NewQuota)
-			fmt.Printf("New Expiration:\t%s\n", mi.PendingBeneficiaryTerm.NewExpiration)
-			fmt.Printf("Approved By Beneficiary:\t%t\n", mi.PendingBeneficiaryTerm.ApprovedByBeneficiary)
-			fmt.Printf("Approved By Nominee:\t%t\n", mi.PendingBeneficiaryTerm.ApprovedByNominee)
-		}
-
-		fmt.Printf("PeerID:\t%s\n", mi.PeerId)
-		fmt.Printf("Multiaddrs:\t")
-		for _, addr := range mi.Multiaddrs {
-			a, err := multiaddr.NewMultiaddrBytes(addr)
-			if err != nil {
-				return xerrors.Errorf("undecodable listen address: %w", err)
-			}
-			fmt.Printf("%s ", a)
-		}
-		fmt.Println()
-		fmt.Printf("Consensus Fault End:\t%d\n", mi.ConsensusFaultElapsed)
-
-		fmt.Printf("SectorSize:\t%s (%d)\n", types.SizeStr(types.NewInt(uint64(mi.SectorSize))), mi.SectorSize)
-		pow, err := api.StateMinerPower(ctx, addr, ts.Key())
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Byte Power:   %s / %s (%0.4f%%)\n",
-			color.BlueString(types.SizeStr(pow.MinerPower.RawBytePower)),
-			types.SizeStr(pow.TotalPower.RawBytePower),
-			types.BigDivFloat(
-				types.BigMul(pow.MinerPower.RawBytePower, big.NewInt(100)),
-				pow.TotalPower.RawBytePower,
-			),
-		)
-
-		fmt.Printf("Actual Power: %s / %s (%0.4f%%)\n",
-			color.GreenString(types.DeciStr(pow.MinerPower.QualityAdjPower)),
-			types.DeciStr(pow.TotalPower.QualityAdjPower),
-			types.BigDivFloat(
-				types.BigMul(pow.MinerPower.QualityAdjPower, big.NewInt(100)),
-				pow.TotalPower.QualityAdjPower,
-			),
-		)
-
-		fmt.Println()
-
-		cd, err := api.StateMinerProvingDeadline(ctx, addr, ts.Key())
-		if err != nil {
-			return xerrors.Errorf("getting miner info: %w", err)
-		}
-
-		fmt.Printf("Proving Period Start:\t%s\n", cliutil.EpochTime(cd.CurrentEpoch, cd.PeriodStart))
 
 		return nil
 	},
@@ -386,6 +240,12 @@ var StateSectorsCmd = &cli.Command{
 	Name:      "sectors",
 	Usage:     "Query the sector set of a miner",
 	ArgsUsage: "[minerAddress]",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "show-partitions",
+			Usage: "show sector deadlines and partitions",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		api, closer, err := GetFullNodeAPI(cctx)
 		if err != nil {
@@ -414,8 +274,23 @@ var StateSectorsCmd = &cli.Command{
 			return err
 		}
 
+		showPartitions := cctx.Bool("show-partitions")
+		header := "Sector Number, Sealed CID"
+		if showPartitions {
+			header = "Sector Number, Deadline, Partition, Sealed CID"
+		}
+		fmt.Println(header)
+
 		for _, s := range sectors {
-			fmt.Printf("%d: %s\n", s.SectorNumber, s.SealedCID)
+			if showPartitions {
+				sp, err := api.StateSectorPartition(ctx, maddr, s.SectorNumber, ts.Key())
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%d, %d, %d, %s\n", s.SectorNumber, sp.Deadline, sp.Partition, s.SealedCID)
+			} else {
+				fmt.Printf("%d, %s\n", s.SectorNumber, s.SealedCID)
+			}
 		}
 
 		return nil
@@ -780,8 +655,8 @@ var StateGetActorCmd = &cli.Command{
 		fmt.Printf("Nonce:\t\t%d\n", a.Nonce)
 		fmt.Printf("Code:\t\t%s (%s)\n", a.Code, strtype)
 		fmt.Printf("Head:\t\t%s\n", a.Head)
-		if a.Address != nil {
-			fmt.Printf("Delegated address:\t\t%s\n", a.Address)
+		if a.DelegatedAddress != nil {
+			fmt.Printf("Delegated address:\t\t%s\n", a.DelegatedAddress)
 		}
 
 		return nil
@@ -1169,150 +1044,11 @@ func printInternalExecutions(prefix string, trace []types.ExecutionTrace) {
 	}
 }
 
-var compStateTemplate = `
-<html>
- <head>
-  <meta charset="UTF-8">
-  <style>
-   html, body { font-family: monospace; }
-   a:link, a:visited { color: #004; }
-   pre { background: #ccc; }
-   small { color: #444; }
-   .call { color: #00a; }
-   .params { background: #dfd; }
-   .ret { background: #ddf; }
-   .error { color: red; }
-   .exit0 { color: green; }
-   .exec {
-    padding-left: 15px;
-    border-left: 2.5px solid;
-    margin-bottom: 45px;
-   }
-   .exec:hover {
-    background: #eee;
-   }
-   .slow-true-false { color: #660; }
-   .slow-true-true { color: #f80; }
-   .deemp { color: #444; }
-   table {
-    font-size: 12px;
-    border-collapse: collapse;
-   }
-   tr {
-   	border-top: 1px solid black;
-   	border-bottom: 1px solid black;
-   }
-   tr.sum { border-top: 2px solid black; }
-   tr:first-child { border-top: none; }
-   tr:last-child { border-bottom: none; }
+//go:embed compstate.html.template
+var compStateTemplate string
 
-
-   .ellipsis-content,
-   .ellipsis-toggle input {
-     display: none;
-   }
-   .ellipsis-toggle {
-     cursor: pointer;
-   }
-   /**
-   Checked State
-   **/
-
-   .ellipsis-toggle input:checked + .ellipsis {
-     display: none;
-   }
-   .ellipsis-toggle input:checked ~ .ellipsis-content {
-     display: inline;
-	 background-color: #ddd;
-   }
-   hr {
-    border: none;
-    height: 1px;
-    background-color: black;
-	margin: 0;
-   }
-  </style>
- </head>
- <body>
-  <div>Tipset: <b>{{.TipSet.Key}}</b></div>
-  <div>Epoch: {{.TipSet.Height}}</div>
-  <div>State CID: <b>{{.Comp.Root}}</b></div>
-  <div>Calls</div>
-  {{range .Comp.Trace}}
-   {{template "message" (Call .ExecutionTrace false .MsgCid.String)}}
-  {{end}}
- </body>
-</html>
-`
-
-var compStateMsg = `
-<div class="exec" id="{{.Hash}}">
- {{$code := GetCode .Msg.To}}
- <div>
- <a href="#{{.Hash}}">
-  {{if not .Subcall}}
-   <h2 class="call">
-  {{else}}
-   <h4 class="call">
-  {{end}}
-   {{- CodeStr $code}}:{{GetMethod ($code) (.Msg.Method)}}
-  {{if not .Subcall}}
-   </h2>
-  {{else}}
-   </h4>
-  {{end}}
- </a>
- </div>
-
- <div><b>{{.Msg.From}}</b> -&gt; <b>{{.Msg.To}}</b> ({{ToFil .Msg.Value}}), M{{.Msg.Method}}</div>
- {{if not .Subcall}}<div><small>Msg CID: {{.Hash}}</small></div>{{end}}
- {{if gt (len .Msg.Params) 0}}
-  <div><pre class="params">{{JsonParams ($code) (.Msg.Method) (.Msg.Params) | html}}</pre></div>
- {{end}}
-  <div><span class="exit{{IntExit .MsgRct.ExitCode}}">Exit: <b>{{.MsgRct.ExitCode}}</b></span>{{if gt (len .MsgRct.Return) 0}}, Return{{end}}</div>
- {{if gt (len .MsgRct.Return) 0}}
-  <div><pre class="ret">{{JsonReturn ($code) (.Msg.Method) (.MsgRct.Return) | html}}</pre></div>
- {{end}}
-
- {{if ne .MsgRct.ExitCode 0}}
-  <div class="error">Exit: <pre>{{.MsgRct.ExitCode}}</pre></div>
- {{end}}
-
-<details>
-<summary>Gas Trace</summary>
-<table>
- <tr><th>Name</th><th>Total/Compute/Storage</th><th>Time Taken</th></tr>
-
- {{define "gasC" -}}
- <td>{{.TotalGas}}/{{.ComputeGas}}/{{.StorageGas}}</td>
- {{- end}}
-
- {{range .GasCharges}}
-  <tr>
-   <td>{{.Name}}</td>
-   {{template "gasC" .}}
-   <td>{{if PrintTiming}}{{.TimeTaken}}{{end}}</td>
-  </tr>
- {{end}}
- {{with sumGas .GasCharges}}
-  <tr class="sum">
-    <td><b>Sum</b></td>
-    {{template "gasC" .}}
-    <td>{{if PrintTiming}}{{.TimeTaken}}{{end}}</td>
-  </tr>
- {{end}}
-</table>
-</details>
-
-
- {{if gt (len .Subcalls) 0}}
-  <div>Subcalls:</div>
-  {{$hash := .Hash}}
-  {{range $i, $call := .Subcalls}}
-   {{template "message" (Call $call true (printf "%s-%d" $hash $i))}}
-  {{end}}
- {{end}}
-</div>`
+//go:embed compstatemsg.html.template
+var compStateMsg string
 
 type compStateHTMLIn struct {
 	TipSet *types.TipSet
@@ -1447,7 +1183,7 @@ var StateWaitMsgCmd = &cli.Command{
 			return err
 		}
 
-		mw, err := api.StateWaitMsg(ctx, msg, build.MessageConfidence)
+		mw, err := api.StateWaitMsg(ctx, msg, buildconstants.MessageConfidence)
 		if err != nil {
 			return err
 		}
@@ -1798,6 +1534,7 @@ var StateMarketCmd = &cli.Command{
 	Usage: "Inspect the storage market actor",
 	Subcommands: []*cli.Command{
 		stateMarketBalanceCmd,
+		stateMarketProposalPending,
 	},
 }
 
@@ -1836,6 +1573,37 @@ var stateMarketBalanceCmd = &cli.Command{
 		fmt.Printf("Escrow: %s\n", types.FIL(balance.Escrow))
 		fmt.Printf("Locked: %s\n", types.FIL(balance.Locked))
 
+		return nil
+	},
+}
+
+var stateMarketProposalPending = &cli.Command{
+	Name:      "proposal-pending",
+	Usage:     "check if a given proposal CID is pending in the market actor",
+	ArgsUsage: "[proposal CID]",
+	Action: func(cctx *cli.Context) error {
+		if cctx.NArg() != 1 {
+			return IncorrectNumArgs(cctx)
+		}
+
+		api, closer, err := GetFullNodeAPIV1(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := ReqContext(cctx)
+
+		propCid, err := cid.Decode(cctx.Args().First())
+		if err != nil {
+			return err
+		}
+
+		pending, err := api.StateMarketProposalPending(ctx, propCid, types.EmptyTSK)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("pending: %t", pending)
 		return nil
 	},
 }

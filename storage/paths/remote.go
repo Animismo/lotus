@@ -93,9 +93,26 @@ func NewRemote(local Store, index SectorIndex, auth http.Header, fetchLimit int,
 	}
 }
 
-func (r *Remote) AcquireSector(ctx context.Context, s storiface.SectorRef, existing storiface.SectorFileType, allocate storiface.SectorFileType, pathType storiface.PathType, op storiface.AcquireMode) (storiface.SectorPaths, storiface.SectorPaths, error) {
+func (r *Remote) AcquireSector(ctx context.Context, s storiface.SectorRef, existing storiface.SectorFileType, allocate storiface.SectorFileType, pathType storiface.PathType, op storiface.AcquireMode, opts ...storiface.AcquireOption) (storiface.SectorPaths, storiface.SectorPaths, error) {
 	if existing|allocate != existing^allocate {
 		return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.New("can't both find and allocate a sector")
+	}
+
+	settings := storiface.AcquireSettings{
+		// Into will tell us which paths things should be fetched into or allocated in.
+		Into: nil,
+	}
+	for _, o := range opts {
+		o(&settings)
+	}
+
+	if settings.Into != nil {
+		if !allocate.IsNone() {
+			return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.New("cannot specify Into with allocate")
+		}
+		if !settings.Into.HasAllSet(existing) {
+			return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.New("Into has to have all existing paths")
+		}
 	}
 
 	// First make sure that no other goroutines are trying to fetch this sector;
@@ -134,47 +151,47 @@ func (r *Remote) AcquireSector(ctx context.Context, s storiface.SectorRef, exist
 	}
 
 	var toFetch storiface.SectorFileType
-	for _, fileType := range storiface.PathTypes {
-		if fileType&existing == 0 {
-			continue
-		}
-
+	for _, fileType := range existing.AllSet() {
 		if storiface.PathByType(paths, fileType) == "" {
 			toFetch |= fileType
 		}
 	}
 
 	// get a list of paths to fetch data into. Note: file type filters will apply inside this call.
-	fetchPaths, ids, err := r.local.AcquireSector(ctx, s, storiface.FTNone, toFetch, pathType, op)
-	if err != nil {
-		return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.Errorf("allocate local sector for fetching: %w", err)
-	}
+	var fetchPaths, fetchIDs storiface.SectorPaths
 
-	overheadTable := storiface.FSOverheadSeal
-	if pathType == storiface.PathStorage {
-		overheadTable = storiface.FsOverheadFinalized
-	}
-
-	// If any path types weren't found in local storage, try fetching them
-
-	// First reserve storage
-	releaseStorage, err := r.local.Reserve(ctx, s, toFetch, ids, overheadTable)
-	if err != nil {
-		return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.Errorf("reserving storage space: %w", err)
-	}
-	defer releaseStorage()
-
-	for _, fileType := range storiface.PathTypes {
-		if fileType&existing == 0 {
-			continue
+	if settings.Into == nil {
+		// fetching without existing reservation, so allocate paths and create a reservation
+		fetchPaths, fetchIDs, err = r.local.AcquireSector(ctx, s, storiface.FTNone, toFetch, pathType, op)
+		if err != nil {
+			return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.Errorf("allocate local sector for fetching: %w", err)
 		}
 
-		if storiface.PathByType(paths, fileType) != "" {
-			continue
+		log.Debugw("Fetching sector data without existing reservation", "sector", s, "toFetch", toFetch, "fetchPaths", fetchPaths, "fetchIDs", fetchIDs)
+
+		overheadTable := storiface.FSOverheadSeal
+		if pathType == storiface.PathStorage {
+			overheadTable = storiface.FsOverheadFinalized
 		}
 
+		// If any path types weren't found in local storage, try fetching them
+
+		// First reserve storage
+		releaseStorage, err := r.local.Reserve(ctx, s, toFetch, fetchIDs, overheadTable, MinFreeStoragePercentage)
+		if err != nil {
+			return storiface.SectorPaths{}, storiface.SectorPaths{}, xerrors.Errorf("reserving storage space: %w", err)
+		}
+		defer releaseStorage()
+	} else {
+		fetchPaths = settings.Into.Paths
+		fetchIDs = settings.Into.IDs
+
+		log.Debugw("Fetching sector data with existing reservation", "sector", s, "toFetch", toFetch, "fetchPaths", fetchPaths, "fetchIDs", fetchIDs)
+	}
+
+	for _, fileType := range toFetch.AllSet() {
 		dest := storiface.PathByType(fetchPaths, fileType)
-		storageID := storiface.PathByType(ids, fileType)
+		storageID := storiface.PathByType(fetchIDs, fileType)
 
 		url, err := r.acquireFromRemote(ctx, s.ID, fileType, dest)
 		if err != nil {
@@ -308,14 +325,14 @@ func (r *Remote) checkAllocated(ctx context.Context, url string, spt abi.Registe
 	}
 }
 
-func (r *Remote) MoveStorage(ctx context.Context, s storiface.SectorRef, types storiface.SectorFileType) error {
+func (r *Remote) MoveStorage(ctx context.Context, s storiface.SectorRef, types storiface.SectorFileType, opts ...storiface.AcquireOption) error {
 	// Make sure we have the data local
-	_, _, err := r.AcquireSector(ctx, s, types, storiface.FTNone, storiface.PathStorage, storiface.AcquireMove)
+	_, _, err := r.AcquireSector(ctx, s, types, storiface.FTNone, storiface.PathStorage, storiface.AcquireMove, opts...)
 	if err != nil {
 		return xerrors.Errorf("acquire src storage (remote): %w", err)
 	}
 
-	return r.local.MoveStorage(ctx, s, types)
+	return r.local.MoveStorage(ctx, s, types, opts...)
 }
 
 func (r *Remote) Remove(ctx context.Context, sid abi.SectorID, typ storiface.SectorFileType, force bool, keepIn []storiface.ID) error {
@@ -399,47 +416,53 @@ func (r *Remote) FsStat(ctx context.Context, id storiface.ID) (fsutil.FsStat, er
 	}
 
 	for _, urlStr := range si.URLs {
-		rl, err := url.Parse(urlStr)
+		out, err := r.StatUrl(ctx, urlStr, id)
 		if err != nil {
-			log.Warnw("failed to parse URL", "url", urlStr, "error", err)
-			continue // Try the next URL
+			log.Warnw("stat url failed", "url", urlStr, "error", err)
+			continue
 		}
 
-		rl.Path = gopath.Join(rl.Path, "stat", string(id))
-
-		req, err := http.NewRequest("GET", rl.String(), nil)
-		if err != nil {
-			log.Warnw("creating request failed", "url", rl.String(), "error", err)
-			continue // Try the next URL
-		}
-		req.Header = r.auth
-		req = req.WithContext(ctx)
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Warnw("request failed", "url", rl.String(), "error", err)
-			continue // Try the next URL
-		}
-
-		if resp.StatusCode == 200 {
-			var out fsutil.FsStat
-			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-				_ = resp.Body.Close()
-				log.Warnw("decoding response failed", "url", rl.String(), "error", err)
-				continue // Try the next URL
-			}
-			_ = resp.Body.Close()
-			return out, nil // Successfully decoded, return the result
-		}
-
-		// non-200 status code
-		b, _ := io.ReadAll(resp.Body) // Best-effort read the body for logging
-		log.Warnw("request to endpoint failed", "url", rl.String(), "statusCode", resp.StatusCode, "response", string(b))
-		_ = resp.Body.Close()
-		// Continue to try the next URL, don't return here as we want to try all URLs
+		return out, nil
 	}
 
 	return fsutil.FsStat{}, xerrors.Errorf("all endpoints failed for remote storage %s", id)
+}
+
+func (r *Remote) StatUrl(ctx context.Context, urlStr string, id storiface.ID) (fsutil.FsStat, error) {
+	rl, err := url.Parse(urlStr)
+	if err != nil {
+		return fsutil.FsStat{}, xerrors.Errorf("parsing URL: %w", err)
+	}
+
+	rl.Path = gopath.Join(rl.Path, "stat", string(id))
+
+	req, err := http.NewRequest("GET", rl.String(), nil)
+	if err != nil {
+		return fsutil.FsStat{}, xerrors.Errorf("creating request failed: %w", err)
+	}
+	req.Header = r.auth
+	req = req.WithContext(ctx)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fsutil.FsStat{}, xerrors.Errorf("do request: %w", err)
+	}
+
+	if resp.StatusCode == 200 {
+		var out fsutil.FsStat
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			_ = resp.Body.Close()
+			return fsutil.FsStat{}, xerrors.Errorf("decoding response failed: %w", err)
+		}
+		_ = resp.Body.Close()
+		return out, nil // Successfully decoded, return the result
+	}
+
+	// non-200 status code
+	b, _ := io.ReadAll(resp.Body) // Best-effort read the body for logging
+	_ = resp.Body.Close()
+
+	return fsutil.FsStat{}, xerrors.Errorf("endpoint failed %s: %d %s", rl.String(), resp.StatusCode, string(b))
 }
 
 func (r *Remote) readRemote(ctx context.Context, url string, offset, size abi.PaddedPieceSize) (io.ReadCloser, error) {
@@ -789,7 +812,7 @@ func (r *Remote) ReaderSeq(ctx context.Context, s storiface.SectorRef, ft storif
 	return nil, xerrors.Errorf("failed to read sector %v from remote(%d): %w", s, ft, storiface.ErrSectorNotFound)
 }
 
-func (r *Remote) Reserve(ctx context.Context, sid storiface.SectorRef, ft storiface.SectorFileType, storageIDs storiface.SectorPaths, overheadTab map[storiface.SectorFileType]int) (func(), error) {
+func (r *Remote) Reserve(ctx context.Context, sid storiface.SectorRef, ft storiface.SectorFileType, storageIDs storiface.SectorPaths, overheadTab map[storiface.SectorFileType]int, minFreePercentage float64) (func(), error) {
 	log.Warnf("reserve called on remote store, sectorID: %v", sid.ID)
 	return func() {
 

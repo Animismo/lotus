@@ -1,4 +1,3 @@
-// stm: #unit
 package chain
 
 import (
@@ -8,12 +7,11 @@ import (
 
 	"github.com/filecoin-project/go-address"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
 func TestSignedMessageJsonRoundtrip(t *testing.T) {
-	//stm: @TYPES_MESSAGE_JSON_EQUAL_CALL_002
 	to, _ := address.NewIDAddress(5234623)
 	from, _ := address.NewIDAddress(603911192)
 	smsg := &types.SignedMessage{
@@ -42,8 +40,7 @@ func TestSignedMessageJsonRoundtrip(t *testing.T) {
 }
 
 func TestAddressType(t *testing.T) {
-	//stm: @CHAIN_TYPES_ADDRESS_PREFIX_001
-	build.SetAddressNetwork(address.Testnet)
+	buildconstants.SetAddressNetwork(address.Testnet)
 	addr, err := makeRandomAddress()
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +50,7 @@ func TestAddressType(t *testing.T) {
 		t.Fatalf("address should start with %s", address.TestnetPrefix)
 	}
 
-	build.SetAddressNetwork(address.Mainnet)
+	buildconstants.SetAddressNetwork(address.Mainnet)
 	addr, err = makeRandomAddress()
 	if err != nil {
 		t.Fatal(err)

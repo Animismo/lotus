@@ -61,6 +61,15 @@ func Load(store adt.Store, act *types.Actor) (State, error) {
 		case actorstypes.Version13:
 			return load13(store, act.Head)
 
+		case actorstypes.Version14:
+			return load14(store, act.Head)
+
+		case actorstypes.Version15:
+			return load15(store, act.Head)
+
+		case actorstypes.Version16:
+			return load16(store, act.Head)
+
 		}
 	}
 
@@ -134,6 +143,15 @@ func MakeState(store adt.Store, av actorstypes.Version) (State, error) {
 	case actorstypes.Version13:
 		return make13(store)
 
+	case actorstypes.Version14:
+		return make14(store)
+
+	case actorstypes.Version15:
+		return make15(store)
+
+	case actorstypes.Version16:
+		return make16(store)
+
 	}
 	return nil, xerrors.Errorf("unknown actor version %d", av)
 }
@@ -153,9 +171,10 @@ type State interface {
 	States() (DealStates, error)
 	ProposalsChanged(State) (bool, error)
 	Proposals() (DealProposals, error)
+	PendingProposals() (PendingProposals, error)
 	VerifyDealsForActivation(
 		minerAddr address.Address, deals []abi.DealID, currEpoch, sectorExpiry abi.ChainEpoch,
-	) (weight, verifiedWeight abi.DealWeight, err error)
+	) (verifiedWeight abi.DealWeight, err error)
 	NextID() (abi.DealID, error)
 	GetState() interface{}
 	GetAllocationIdForPendingDeal(dealId abi.DealID) (verifregtypes.AllocationId, error)
@@ -180,6 +199,10 @@ type DealProposals interface {
 
 	array() adt.Array
 	decode(*cbg.Deferred) (*markettypes.DealProposal, error)
+}
+
+type PendingProposals interface {
+	Has(proposalCid cid.Cid) (bool, error)
 }
 
 type PublishStorageDealsReturn interface {
@@ -235,6 +258,15 @@ func DecodePublishStorageDealsReturn(b []byte, nv network.Version) (PublishStora
 	case actorstypes.Version13:
 		return decodePublishStorageDealsReturn13(b)
 
+	case actorstypes.Version14:
+		return decodePublishStorageDealsReturn14(b)
+
+	case actorstypes.Version15:
+		return decodePublishStorageDealsReturn15(b)
+
+	case actorstypes.Version16:
+		return decodePublishStorageDealsReturn16(b)
+
 	}
 	return nil, xerrors.Errorf("unknown actor version %d", av)
 }
@@ -243,6 +275,7 @@ type DealProposal = markettypes.DealProposal
 type DealLabel = markettypes.DealLabel
 
 type DealState interface {
+	SectorNumber() abi.SectorNumber   // 0 if not yet included in proven sector (0 is also a valid sector number)
 	SectorStartEpoch() abi.ChainEpoch // -1 if not yet included in proven sector
 	LastUpdatedEpoch() abi.ChainEpoch // -1 if deal state never updated
 	SlashEpoch() abi.ChainEpoch       // -1 if deal never slashed
@@ -251,7 +284,19 @@ type DealState interface {
 }
 
 func DealStatesEqual(a, b DealState) bool {
-	return DealStatesEqual(a, b)
+	if a.SectorNumber() != b.SectorNumber() {
+		return false
+	}
+	if a.SectorStartEpoch() != b.SectorStartEpoch() {
+		return false
+	}
+	if a.LastUpdatedEpoch() != b.LastUpdatedEpoch() {
+		return false
+	}
+	if a.SlashEpoch() != b.SlashEpoch() {
+		return false
+	}
+	return true
 }
 
 type DealStateChanges struct {
@@ -284,6 +329,10 @@ type ProposalIDState struct {
 
 type emptyDealState struct{}
 
+func (e *emptyDealState) SectorNumber() abi.SectorNumber {
+	return 0
+}
+
 func (e *emptyDealState) SectorStartEpoch() abi.ChainEpoch {
 	return -1
 }
@@ -297,16 +346,7 @@ func (e *emptyDealState) SlashEpoch() abi.ChainEpoch {
 }
 
 func (e *emptyDealState) Equals(other DealState) bool {
-	if e.SectorStartEpoch() != other.SectorStartEpoch() {
-		return false
-	}
-	if e.LastUpdatedEpoch() != other.LastUpdatedEpoch() {
-		return false
-	}
-	if e.SlashEpoch() != other.SlashEpoch() {
-		return false
-	}
-	return true
+	return DealStatesEqual(e, other)
 }
 
 func EmptyDealState() DealState {
@@ -356,5 +396,8 @@ func AllCodes() []cid.Cid {
 		(&state11{}).Code(),
 		(&state12{}).Code(),
 		(&state13{}).Code(),
+		(&state14{}).Code(),
+		(&state15{}).Code(),
+		(&state16{}).Code(),
 	}
 }

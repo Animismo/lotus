@@ -48,7 +48,6 @@ func main() {
 		proofsCmd,
 		verifRegCmd,
 		marketCmd,
-		miscCmd,
 		mpoolCmd,
 		helloCmd,
 		genesisVerifyCmd,
@@ -87,17 +86,17 @@ func main() {
 		invariantsCmd,
 		gasTraceCmd,
 		replayOfflineCmd,
-		indexesCmd,
 		FevmAnalyticsCmd,
 		mismatchesCmd,
 		blockCmd,
-		lpUtilCmd,
+		adlCmd,
+		f3Cmd,
 	}
 
 	app := &cli.App{
 		Name:     "lotus-shed",
 		Usage:    "A place for all the lotus tools",
-		Version:  build.UserVersion(),
+		Version:  string(build.NodeUserVersion()),
 		Commands: local,
 		Flags: []cli.Flag{
 			&cli.StringFlag{

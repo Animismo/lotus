@@ -3,6 +3,7 @@ package lp2p
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"time"
 
@@ -10,13 +11,16 @@ import (
 	pubsub_pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/minio/blake2b-simd"
 	ma "github.com/multiformats/go-multiaddr"
 	"go.opencensus.io/stats"
 	"go.uber.org/fx"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/xerrors"
 
+	"github.com/filecoin-project/go-f3/manifest"
+
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/chain/lf3"
 	"github.com/filecoin-project/lotus/metrics"
 	"github.com/filecoin-project/lotus/node/config"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
@@ -85,6 +89,8 @@ type GossipIn struct {
 	Cfg  *config.Pubsub
 	Sk   *dtypes.ScoreKeeper
 	Dr   dtypes.DrandSchedule
+
+	F3Config *lf3.Config `optional:"true"`
 }
 
 func getDrandTopic(chainInfoJSON string) (string, error) {
@@ -135,22 +141,6 @@ func GossipSub(in GossipIn) (service *pubsub.PubSub, err error) {
 		// We should revisit this once the network grows.
 
 		// invalid messages decay after 1 hour
-		InvalidMessageDeliveriesWeight: -1000,
-		InvalidMessageDeliveriesDecay:  pubsub.ScoreParameterDecay(time.Hour),
-	}
-
-	ingestTopicParams := &pubsub.TopicScoreParams{
-		// expected ~0.5 confirmed deals / min. sampled
-		TopicWeight: 0.1,
-
-		TimeInMeshWeight:  0.00027, // ~1/3600
-		TimeInMeshQuantum: time.Second,
-		TimeInMeshCap:     1,
-
-		FirstMessageDeliveriesWeight: 0.5,
-		FirstMessageDeliveriesDecay:  pubsub.ScoreParameterDecay(time.Hour),
-		FirstMessageDeliveriesCap:    100, // allowing for burstiness
-
 		InvalidMessageDeliveriesWeight: -1000,
 		InvalidMessageDeliveriesDecay:  pubsub.ScoreParameterDecay(time.Hour),
 	}
@@ -248,9 +238,6 @@ func GossipSub(in GossipIn) (service *pubsub.PubSub, err error) {
 		pgTopicWeights[topic] = 5
 		drandTopics = append(drandTopics, topic)
 	}
-
-	// Index ingestion whitelist
-	topicParams[build.IndexerIngestTopic(in.Nn)] = ingestTopicParams
 
 	// IP colocation whitelist
 	var ipcoloWhitelist []*net.IPNet
@@ -376,9 +363,24 @@ func GossipSub(in GossipIn) (service *pubsub.PubSub, err error) {
 	allowTopics := []string{
 		build.BlocksTopic(in.Nn),
 		build.MessagesTopic(in.Nn),
-		build.IndexerIngestTopic(in.Nn),
 	}
+
 	allowTopics = append(allowTopics, drandTopics...)
+
+	if in.F3Config != nil {
+		if in.F3Config.StaticManifest != nil {
+			f3TopicName := manifest.PubSubTopicFromNetworkName(in.F3Config.StaticManifest.NetworkName)
+			allowTopics = append(allowTopics, f3TopicName)
+		}
+		if in.F3Config.DynamicManifestProvider != "" {
+			f3BaseTopicName := manifest.PubSubTopicFromNetworkName(in.F3Config.BaseNetworkName)
+			allowTopics = append(allowTopics, manifest.ManifestPubSubTopicName)
+			for i := 0; i < lf3.MaxDynamicManifestChangesAllowed; i++ {
+				allowTopics = append(allowTopics, fmt.Sprintf("%s/%d", f3BaseTopicName, i))
+			}
+		}
+	}
+
 	options = append(options,
 		pubsub.WithSubscriptionFilter(
 			pubsub.WrapLimitSubscriptionFilter(
@@ -594,7 +596,7 @@ func (trw *tracerWrapper) Trace(evt *pubsub_pb.TraceEvent) {
 		msgsRPC := evt.GetRecvRPC().GetMeta().GetMessages()
 
 		// check if any of the messages we are sending belong to a trackable topic
-		var validTopic bool = false
+		var validTopic = false
 		for _, topic := range msgsRPC {
 			if trw.traceMessage(topic.GetTopic()) {
 				validTopic = true
@@ -602,7 +604,7 @@ func (trw *tracerWrapper) Trace(evt *pubsub_pb.TraceEvent) {
 			}
 		}
 		// track if the Iwant / Ihave messages are from a valid Topic
-		var validIhave bool = false
+		var validIhave = false
 		for _, msgs := range ihave {
 			if trw.traceMessage(msgs.GetTopic()) {
 				validIhave = true
@@ -630,7 +632,7 @@ func (trw *tracerWrapper) Trace(evt *pubsub_pb.TraceEvent) {
 		msgsRPC := evt.GetSendRPC().GetMeta().GetMessages()
 
 		// check if any of the messages we are sending belong to a trackable topic
-		var validTopic bool = false
+		var validTopic = false
 		for _, topic := range msgsRPC {
 			if trw.traceMessage(topic.GetTopic()) {
 				validTopic = true
@@ -638,7 +640,7 @@ func (trw *tracerWrapper) Trace(evt *pubsub_pb.TraceEvent) {
 			}
 		}
 		// track if the Iwant / Ihave messages are from a valid Topic
-		var validIhave bool = false
+		var validIhave = false
 		for _, msgs := range ihave {
 			if trw.traceMessage(msgs.GetTopic()) {
 				validIhave = true

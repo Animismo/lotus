@@ -107,14 +107,6 @@ func (lmem *lockedMemRepo) Path() string {
 		panic(err) // only used in tests, probably fine
 	}
 
-	if _, ok := lmem.t.(SupportsStagingDeals); ok {
-		// this is required due to the method makeDealStaging from cmd/lotus-storage-miner/init.go
-		// deal-staging is the directory deal files are staged in before being sealed into sectors
-		// for offline deal flow.
-		if err := os.MkdirAll(filepath.Join(t, "deal-staging"), 0755); err != nil {
-			panic(err)
-		}
-	}
 	if lmem.t == StorageMiner || lmem.t == Worker {
 		lmem.initSectorStore(t)
 	}
@@ -276,12 +268,12 @@ func (lmem *lockedMemRepo) SplitstorePath() (string, error) {
 	return splitstorePath, nil
 }
 
-func (lmem *lockedMemRepo) SqlitePath() (string, error) {
-	sqlitePath := filepath.Join(lmem.Path(), "sqlite")
-	if err := os.MkdirAll(sqlitePath, 0755); err != nil {
+func (lmem *lockedMemRepo) ChainIndexPath() (string, error) {
+	chainIndexPath := filepath.Join(lmem.Path(), "chainindex")
+	if err := os.MkdirAll(chainIndexPath, 0755); err != nil {
 		return "", err
 	}
-	return sqlitePath, nil
+	return chainIndexPath, nil
 }
 
 func (lmem *lockedMemRepo) ListDatastores(ns string) ([]int64, error) {

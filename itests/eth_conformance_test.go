@@ -22,7 +22,7 @@ import (
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/big"
 
-	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/build/buildconstants"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/types/ethtypes"
 	"github.com/filecoin-project/lotus/chain/wallet/key"
@@ -49,11 +49,12 @@ type ethAPIRaw struct {
 	EthGetLogs                             func(context.Context, *ethtypes.EthFilterSpec) (json.RawMessage, error)
 	EthGetStorageAt                        func(context.Context, ethtypes.EthAddress, ethtypes.EthBytes, ethtypes.EthBlockNumberOrHash) (json.RawMessage, error)
 	EthGetTransactionByBlockHashAndIndex   func(context.Context, ethtypes.EthHash, ethtypes.EthUint64) (json.RawMessage, error)
-	EthGetTransactionByBlockNumberAndIndex func(context.Context, ethtypes.EthUint64, ethtypes.EthUint64) (json.RawMessage, error)
+	EthGetTransactionByBlockNumberAndIndex func(context.Context, string, ethtypes.EthUint64) (json.RawMessage, error)
 	EthGetTransactionByHash                func(context.Context, *ethtypes.EthHash) (json.RawMessage, error)
 	EthGetTransactionCount                 func(context.Context, ethtypes.EthAddress, ethtypes.EthBlockNumberOrHash) (json.RawMessage, error)
 	EthGetTransactionReceipt               func(context.Context, ethtypes.EthHash) (json.RawMessage, error)
 	EthMaxPriorityFeePerGas                func(context.Context) (json.RawMessage, error)
+	EthGetBlockReceipts                    func(context.Context, ethtypes.EthBlockNumberOrHash) (json.RawMessage, error)
 	EthNewBlockFilter                      func(context.Context) (json.RawMessage, error)
 	EthNewFilter                           func(context.Context, *ethtypes.EthFilterSpec) (json.RawMessage, error)
 	EthNewPendingTransactionFilter         func(context.Context) (json.RawMessage, error)
@@ -321,15 +322,13 @@ func TestEthOpenRPCConformance(t *testing.T) {
 			call: func(a *ethAPIRaw) (json.RawMessage, error) {
 				return ethapi.EthGetTransactionByBlockHashAndIndex(context.Background(), blockHashWithMessage, ethtypes.EthUint64(0))
 			},
-			skipReason: "unimplemented",
 		},
 
 		{
 			method: "eth_getTransactionByBlockNumberAndIndex",
 			call: func(a *ethAPIRaw) (json.RawMessage, error) {
-				return ethapi.EthGetTransactionByBlockNumberAndIndex(context.Background(), blockNumberWithMessage, ethtypes.EthUint64(0))
+				return ethapi.EthGetTransactionByBlockNumberAndIndex(context.Background(), blockNumberWithMessage.Hex(), ethtypes.EthUint64(0))
 			},
-			skipReason: "unimplemented",
 		},
 
 		{
@@ -353,7 +352,12 @@ func TestEthOpenRPCConformance(t *testing.T) {
 				return ethapi.EthGetTransactionReceipt(context.Background(), messageWithEvents)
 			},
 		},
-
+		{
+			method: "eth_getBlockReceipts",
+			call: func(a *ethAPIRaw) (json.RawMessage, error) {
+				return ethapi.EthGetBlockReceipts(context.Background(), ethtypes.NewEthBlockNumberOrHashFromNumber(blockNumberWithMessage))
+			},
+		},
 		{
 			method: "eth_maxPriorityFeePerGas",
 			call: func(a *ethAPIRaw) (json.RawMessage, error) {
@@ -463,8 +467,8 @@ func createRawSignedEthTx(ctx context.Context, t *testing.T, client *kit.TestFul
 	maxPriorityFeePerGas, err := client.EthMaxPriorityFeePerGas(ctx)
 	require.NoError(t, err)
 
-	tx := ethtypes.EthTxArgs{
-		ChainID:              build.Eip155ChainId,
+	tx := ethtypes.Eth1559TxArgs{
+		ChainID:              buildconstants.Eip155ChainId,
 		Value:                big.NewInt(100),
 		Nonce:                0,
 		To:                   &receiverEthAddr,
@@ -500,12 +504,15 @@ func waitForMessageWithEvents(ctx context.Context, t *testing.T, client *kit.Tes
 	require.NoError(t, err)
 	require.NotNil(t, msgHash)
 
-	ts, err := client.ChainGetTipSet(ctx, ret.TipSet)
+	executionTs, err := client.ChainGetTipSet(ctx, ret.TipSet)
 	require.NoError(t, err)
 
-	blockNumber := ethtypes.EthUint64(ts.Height())
+	inclusionTs, err := client.ChainGetTipSet(ctx, executionTs.Parents())
+	require.NoError(t, err)
 
-	tsCid, err := ts.Key().Cid()
+	blockNumber := ethtypes.EthUint64(inclusionTs.Height())
+
+	tsCid, err := inclusionTs.Key().Cid()
 	require.NoError(t, err)
 
 	blockHash, err := ethtypes.EthHashFromCid(tsCid)

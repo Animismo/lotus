@@ -14,8 +14,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/actors/builtin"
 )
 
-//go:generate go run ./gen
-
 // Actor is a chaos actor. It implements a variety of illegal behaviours that
 // trigger violations of VM invariants. These behaviours are not found in
 // production code, but are important to test that the VM constraints are
@@ -274,9 +272,8 @@ type AbortWithArgs struct {
 func (a Actor) AbortWith(rt runtime2.Runtime, args *AbortWithArgs) *abi.EmptyValue {
 	if args.Uncontrolled { // uncontrolled abort: directly panic
 		panic(args.Message)
-	} else {
-		rt.Abortf(args.Code, args.Message)
 	}
+	rt.Abortf(args.Code, args.Message)
 	return nil
 }
 
